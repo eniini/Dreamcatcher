@@ -43,31 +43,37 @@ async def on_ready():
 # SUBSCRIBE TO STREAM NOTIFICATIONS
 @bot.command(name="subscribe", help="Subscribe the current channel to receive upcoming stream notifications.")
 async def subscribe(ctx, channel: discord.TextChannel):
-	if (channel):
-		main.add_channel_to_whitelist(str(channel.id))
-		if (channel.permissions_for(channel.guild.me).send_messages == False):
-			await ctx.send(f"I don't have permission to send messages in {channel.name}. Please try subscribing again after granting the necessary permissions.")
-			main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {channel.name}")
+	try:
+		if (channel):
+			main.add_channel_to_whitelist(str(channel.id))
+			if (channel.permissions_for(channel.guild.me).send_messages == False):
+				await ctx.send(f"I don't have permission to send messages in {channel.name}. Please try subscribing again after granting the necessary permissions.")
+				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {channel.name}")
+			else:
+				await ctx.send(f"{channel.name} will now receive upcoming stream notifications!")
+				main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...")
 		else:
-			await ctx.send(f"{channel.name} will now receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...")
-	else:
-		# adding the current channel to the whitelist
-		add_channel_to_whitelist(str(ctx.channel.id))
-		await ctx.send("This channel will now receive upcoming stream notifications!")
-		main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...")
+			# adding the current channel to the whitelist
+			add_channel_to_whitelist(str(ctx.channel.id))
+			await ctx.send("This channel will now receive upcoming stream notifications!")
+			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...")
+	except Exception as e:
+		main.logger.error(f"Error subscribing discord channel for bot notifications: {e}")
 
 # UNSUBSCRIBE FROM STREAM NOTIFICATIONS
 @bot.command(name="unsubscribe", help="Unsubscribe the current channel from receiving upcoming stream notifications.")
 async def unsubscribe(ctx, channel: discord.TextChannel):
-	if (channel):
-		main.remove_channel_from_whitelist(str(channel.id))
-		await ctx.send(f"{channel.name} will no longer receive upcoming stream notifications!")
-		main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...")
-	else:
-		remove_channel_from_whitelist(str(ctx.channel.id))
-		await ctx.send("This channel will no longer receive upcoming stream notifications!")
-		logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
+	try:
+		if (channel):
+			main.remove_channel_from_whitelist(str(channel.id))
+			await ctx.send(f"{channel.name} will no longer receive upcoming stream notifications!")
+			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...")
+		else:
+			remove_channel_from_whitelist(str(ctx.channel.id))
+			await ctx.send("This channel will no longer receive upcoming stream notifications!")
+			logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
+	except Exception as e:
+		main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}")
 
 # GET LATEST STREAM
 @bot.command(name="latest_stream", help="Fetches the latest live stream from the monitored YouTube channel.")
@@ -200,6 +206,6 @@ async def notify_discord(activity_type, title, published_at, video_id, post_text
 						f"🔗 Check it out: https://www.youtube.com/channel/{main.NIMI_YOUTUBE_ID}/community"
 					)
 			except Exception as e:
-				main.logger.info(f"Error sending message to channel {channel.name}: {e}")
+				main.logger.error(f"Error sending message to channel {channel.name}: {e}")
 		else:
 			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")

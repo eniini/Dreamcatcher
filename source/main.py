@@ -64,28 +64,41 @@ def init_db():
 	conn.close()
 
 def add_channel_to_whitelist(channel_id):
-	conn = sqlite3.connect('whitelist_channels.db')
-	c = conn.cursor()
-	c.execute("INSERT OR IGNORE INTO whitelist_channels (channel_id) VALUES (?)", (channel_id,))
-	conn.commit()
-	conn.close()
+	try:
+		conn = sqlite3.connect('whitelist_channels.db')
+		c = conn.cursor()
+		c.execute("INSERT OR IGNORE INTO whitelist_channels (channel_id) VALUES (?)", (channel_id,))
+		conn.commit()
+		conn.close()
+	except Exception as e:
+		logger.error(f"Error adding channel to whitelist: {e}")
 
 def remove_channel_from_whitelist(channel_id):
-	conn = sqlite3.connect('whitelist_channels.db')
-	c = conn.cursor()
-	c.execute("DELETE FROM whitelist_channels WHERE channel_id = ?", (channel_id,))
-	conn.commit()
-	conn.close()
+	try:
+		conn = sqlite3.connect('whitelist_channels.db')
+		c = conn.cursor()
+		c.execute("DELETE FROM whitelist_channels WHERE channel_id = ?", (channel_id,))
+		conn.commit()
+		conn.close()
+	except Exception as e:
+		logger.error(f"Error removing channel from whitelist: {e}")
 
 def get_whitelisted_channels():
-	conn = sqlite3.connect('whitelist_channels.db')
-	c = conn.cursor()
-	c.execute("SELECT channel_id FROM whitelist_channels")
-	channels = [row[0] for row in c.fetchall()]
-	conn.close()
-	return channels
+	try:
+		conn = sqlite3.connect('whitelist_channels.db')
+		c = conn.cursor()
+		c.execute("SELECT channel_id FROM whitelist_channels")
+		channels = [row[0] for row in c.fetchall()]
+		conn.close()
+		return channels
+	except Exception as e:
+		logger.error(f"Error fetching whitelisted channels: {e}")
+		return []
 
 if __name__ == "__main__":
 	# Initialize the SQLite database
-	init_db()
-	bot.bot.run(DISCORD_BOT_TOKEN)
+	try:
+		init_db()
+		bot.bot.run(DISCORD_BOT_TOKEN)
+	except Exception as e:
+		logger.error(f"Error initializing the Discord bot: {e}")

@@ -12,36 +12,43 @@ client.login(main.BLUESKY_USERNAME, main.BLUESKY_PASSWORD)
 
 def bluesky_post_already_notified(post_uri):
 	"""Checks if the given Bluesky post URI is already stored in the database."""
-	conn = sqlite3.connect("bluesky_posts.db")
-	cursor = conn.cursor()
-	cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bluesky_posts'")
-	table_exists = cursor.fetchone()
-	if table_exists:
-		cursor.execute("SELECT uri FROM bluesky_posts WHERE uri = ?", (post_uri,))
-	else:
+	try:
+		conn = sqlite3.connect("bluesky_posts.db")
+		cursor = conn.cursor()
+		cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bluesky_posts'")
+		table_exists = cursor.fetchone()
+		if table_exists:
+			cursor.execute("SELECT uri FROM bluesky_posts WHERE uri = ?", (post_uri,))
+		else:
+			return False
+		result = cursor.fetchone()
+		conn.close()
+		return result is not None  # True if post exists, False otherwise
+	except Exception as e:
+		main.logger.error(f"Error checking database if post is already notified: {e}")
 		return False
-	result = cursor.fetchone()
-	conn.close()
-	return result is not None  # True if post exists, False otherwise
 
 def bluesky_save_post_to_db(post_uri, content):
 	"""Saves the Bluesky post URI and content in the database."""
-	conn = sqlite3.connect("bluesky_posts.db")
-	cursor = conn.cursor()
-	# insert new post, ignore if exists
-	cursor.execute("INSERT OR IGNORE INTO bluesky_posts (uri, content) VALUES (?, ?)", (post_uri, content))
+	try:
+		conn = sqlite3.connect("bluesky_posts.db")
+		cursor = conn.cursor()
+		# insert new post, ignore if exists
+		cursor.execute("INSERT OR IGNORE INTO bluesky_posts (uri, content) VALUES (?, ?)", (post_uri, content))
 
-	# Delete older posts, keeping only the latest 20
-	cursor.execute("""
-		DELETE FROM bluesky_posts 
-		WHERE id NOT IN (
-			SELECT id FROM bluesky_posts 
-			ORDER BY timestamp DESC 
-			LIMIT 20
-		)
-	""")
-	conn.commit()
-	conn.close()
+		# Delete older posts, keeping only the latest 20
+		cursor.execute("""
+			DELETE FROM bluesky_posts 
+			WHERE id NOT IN (
+				SELECT id FROM bluesky_posts 
+				ORDER BY timestamp DESC 
+				LIMIT 20
+			)
+		""")
+		conn.commit()
+		conn.close()
+	except Exception as e:
+		main.logger.error(f"Error saving post to database: {e}")
 
 def convert_bluesky_uri_to_url(at_uri):
 	"""
@@ -107,5 +114,5 @@ def fetch_bluesky_posts():
 				posts.append({"text": post_text, "uri": post_uri, "post_images": images, "links": links})
 		return posts
 	except Exception as e:
-		main.logger.info(f"Error fetching Bluesky posts: {e}")
+		main.logger.error(f"Error fetching Bluesky posts: {e}")
 		return None

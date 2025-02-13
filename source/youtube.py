@@ -15,35 +15,43 @@ print(type(youtube))
 
 def youtube_post_already_notified(post_id):
 	"""Checks if the given Youtube post ID is already stored in the database."""
-	conn = sqlite3.connect("youtube_posts.db")
-	cursor = conn.cursor()
-	cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='youtube_posts'")
-	table_exists = cursor.fetchone()
-	if table_exists:
-		cursor.execute("SELECT activity_id FROM youtube_posts WHERE activity_id = ?", (post_id,))
-	else:
-		return False
-	result = cursor.fetchone()
-	conn.close()
-	return result is not None  # True if post exists, False otherwise
+	try:
+		conn = sqlite3.connect("youtube_posts.db")
+		cursor = conn.cursor()
+		cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='youtube_posts'")
+		table_exists = cursor.fetchone()
+		if table_exists:
+			cursor.execute("SELECT activity_id FROM youtube_posts WHERE activity_id = ?", (post_id,))
+		else:
+			return False
+		result = cursor.fetchone()
+		conn.close()
+		return result is not None  # True if post exists, False otherwise
+	except Exception as e:
+		main.logger.error(f"Error adding YT activity post to database: {e}")
+		# returning true if SQL query fails for some reason to avoid looping.
+		return True
 
 def youtube_save_post_to_db(post_id):
 	"""Saves the Youtube post ID in the database."""
-	conn = sqlite3.connect("youtube_posts.db")
-	cursor = conn.cursor()
-	# insert new post, ignore if exists
-	cursor.execute("INSERT OR IGNORE INTO youtube_posts (activity_id) VALUES (?)", [post_id])
-	# Delete older posts, keeping only the latest 20
-	cursor.execute("""
-		DELETE FROM youtube_posts 
-		WHERE id NOT IN (
-			SELECT id FROM youtube_posts 
-			ORDER BY timestamp DESC 
-			LIMIT 20
-		)
-	""")
-	conn.commit()
-	conn.close()
+	try:
+		conn = sqlite3.connect("youtube_posts.db")
+		cursor = conn.cursor()
+		# insert new post, ignore if exists
+		cursor.execute("INSERT OR IGNORE INTO youtube_posts (activity_id) VALUES (?)", [post_id])
+		# Delete older posts, keeping only the latest 20
+		cursor.execute("""
+			DELETE FROM youtube_posts 
+			WHERE id NOT IN (
+				SELECT id FROM youtube_posts 
+				ORDER BY timestamp DESC 
+				LIMIT 20
+			)
+		""")
+		conn.commit()
+		conn.close()
+	except Exception as e:
+		main.logger.error(f"Error saving post to database: {e}")
 
 async def get_latest_video_from_playlist():
 	"""Fetches the latest video ID from the channel's uploads playlist."""
@@ -61,7 +69,7 @@ async def get_latest_video_from_playlist():
 		if response["items"]:
 			return response["items"][0]["contentDetails"]["videoId"]
 	except Exception as e:
-		main.logger.info(f"Error fetching latest video from playlist: {e}")
+		main.logger.error(f"Error fetching latest vide from playlist: {e}")
 	return None
 
 async def check_for_youtube_activities():
@@ -98,6 +106,6 @@ async def check_for_youtube_activities():
 				if video_id or post_text:
 					await bot.notify_discord(activity_type, title, published_at, video_id, post_text)
 		except Exception as e:
-			main.logger.info(f"Error fetching Youtube API information or saving it to SQL: {e}")
+			main.logger.error(f"Error fetching Youtube API information or saving it to SQL: {e}")
 		# wait for 60 seconds before checking again
 		await asyncio.sleep(60)
