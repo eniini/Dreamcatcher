@@ -40,7 +40,7 @@ async def on_ready():
 			main.logger.info(f"Bot is ready! Logged in as {bot.user.name}#{bot.user.discriminator}\n")
 
 		# Start the Bluesky post sharing task
-		bot.loop.create_task(share_bluesky_posts())
+		bot.loop.create_task(blsky.share_bluesky_posts())
 
 		# Start the YT activity checking task
 		bot.loop.create_task(youtube.check_for_youtube_activities())
@@ -115,77 +115,7 @@ async def latest_stream(ctx):
 		main.logger.info(f"Error fetching latest stream: {e}\n")
 		await ctx.send("An error occurred while fetching the latest stream.")
 
-async def share_bluesky_posts():
-	main.logger.info(f"Starting the Bluesky post sharing task...\n")
-	while True:
-		try:
-			posts = blsky.fetch_bluesky_posts()
-			# Allow time for API response
-			await asyncio.sleep(5)
-			if posts:
-				for post in posts:
-					#logger.info(f"Post: {post['text']}\n")
-					post_uri = post['uri']
-					content = post['text']
-					images = post['post_images']
-					links = post['links']
-					# skip if already sent
-					if (blsky.bluesky_post_already_notified(post_uri)):
-						#logger.info(f"⚠️ Skipping duplicate post: {post_uri}")
-						break
-					# Send notification to all whitelisted Discord channels
-					whitelisted_channels = main.get_whitelisted_channels()
-					for channel_id in whitelisted_channels:
-						channel = await bot.fetch_channel(int(channel_id))
-						# check if the bot has permission to send messages in the channel
-						if channel and channel.permissions_for(channel.guild.me).send_messages:
-							try:
-								# Extract possible truncated links using regex macro
-								truncated_links = main.URL_REGEX.findall(content)
-								# Replace truncated links with full URLs
-								if truncated_links and links:
-									# match short links with full links, replace in content
-									for short_link, full_link in zip(truncated_links, links):
-										content = content.replace(short_link, f"[🔗 {short_link}]({full_link})")
-								# Create embed for better formatting
-								post_url = blsky.convert_bluesky_uri_to_url(post_uri)
-								embed = discord.Embed(
-									title="🦋 New Bluesky Post!",
-									description=content,
-									color=discord.Color.blue(),
-									url=post_url
-								)
-								embed.set_author(name="Nimi Nightmare 💭",
-								icon_url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
-								)
-								embed.set_thumbnail(url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg")
-								
-								# fetch reposted image... embed.set_image(url=image_url)
-								if images:
-									embed.set_image(url=images[0]) # Show the first image in the post
-								embed.timestamp = discord.utils.utcnow()
-								await channel.send(
-									embed=embed
-								)
-								# If multiple images exist, send them separately
-								if len(images) > 1:
-									for img_url in images[1:]:
-										await channel.send(img_url)  # Send additional images as normal messages
-
-								# Save the post URI and content to the database
-								blsky.bluesky_save_post_to_db(post_uri, content)
-
-							except Exception as e:
-								main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
-						else:
-							main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")
-		except Exception as e:
-			main.logger.info(f"Error fetching or sending Bluesky posts: {e}\n")
-
-		# Wait for 10 seconds before checking again
-		await asyncio.sleep(10)
-
-async def notify_discord(activity_type, title, published_at, video_id, post_text):
+async def notify_youtube_activity(activity_type, title, published_at, video_id, post_text):
 	whitelisted_channels = main.get_whitelisted_channels()
 	for channel_id in whitelisted_channels:
 		channel = await bot.fetch_channel(int(channel_id))
@@ -213,3 +143,45 @@ async def notify_discord(activity_type, title, published_at, video_id, post_text
 				main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
 		else:
 			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
+
+async def notify_bluesky_activity(post_uri, content, images, links):
+	whitelisted_channels = main.get_whitelisted_channels()
+	for channel_id in whitelisted_channels:
+		channel = await bot.fetch_channel(int(channel_id))
+		# check if the bot has permission to send messages in the channel
+		if channel and channel.permissions_for(channel.guild.me).send_messages:
+			try:
+				# Extract possible truncated links using regex macro
+				truncated_links = main.URL_REGEX.findall(content)
+				# Replace truncated links with full URLs
+				if truncated_links and links:
+					# match short links with full links, replace in content
+					for short_link, full_link in zip(truncated_links, links):
+						content = content.replace(short_link, f"[🔗 {short_link}]({full_link})")
+						# Create embed for better formatting
+						post_url = blsky.convert_bluesky_uri_to_url(post_uri)
+						embed = discord.Embed(
+							title="🦋 New Bluesky Post!",
+							description=content,
+							color=discord.Color.blue(),
+							url=post_url
+						)
+						embed.set_author(name="Nimi Nightmare 💭",
+							icon_url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
+						)
+						embed.set_thumbnail(url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg")
+						# fetch reposted image... embed.set_image(url=image_url)
+						if images:
+							embed.set_image(url=images[0]) # Show the first image in the post
+							embed.timestamp = discord.utils.utcnow()
+							await channel.send(
+								embed=embed
+							)
+							# If multiple images exist, send them separately
+							if len(images) > 1:
+								for img_url in images[1:]:
+									await channel.send(img_url)  # Send additional images as normal messages
+			except Exception as e:
+				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
+		else:
+			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")

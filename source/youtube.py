@@ -142,7 +142,7 @@ async def check_for_youtube_activities():
 			else:
 				youtube_save_post_to_db(activity_id)
 			if video_id or post_text:
-				await bot.notify_discord(activity_type, title, published_at, video_id, post_text)
+				await bot.notify_youtube_activity(activity_type, title, published_at, video_id, post_text)
 		except Exception as e:
 			main.logger.error(f"Error saving Youtube API result to SQL: {e}")		
 

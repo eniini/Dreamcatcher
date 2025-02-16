@@ -158,3 +158,31 @@ def fetch_bluesky_posts():
 	except Exception as e:
 		main.logger.error(f"Error fetching Bluesky posts: {e}\n")
 		return None
+
+async def share_bluesky_posts():
+	main.logger.info(f"Starting the Bluesky post sharing task...\n")
+	while True:
+		try:
+			posts = fetch_bluesky_posts()
+			# Allow time for API response
+			await asyncio.sleep(5)
+			if posts:
+				for post in posts:
+					#logger.info(f"Post: {post['text']}\n")
+					post_uri = post['uri']
+					content = post['text']
+					images = post['post_images']
+					links = post['links']
+					# skip if already sent
+					if (bluesky_post_already_notified(post_uri)):
+						#logger.info(f"⚠️ Skipping duplicate post: {post_uri}")
+						break
+					# Send notification to all whitelisted Discord channels
+					bot.notify_bluesky_activity(post_uri, content, images, links)
+					# Save the post URI and content to the database
+					bluesky_save_post_to_db(post_uri, content)
+		except Exception as e:
+			main.logger.info(f"Error fetching or sending Bluesky posts: {e}\n")
+
+		# Wait for 10 seconds before checking again
+		await asyncio.sleep(10)
