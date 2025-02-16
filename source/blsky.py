@@ -1,12 +1,53 @@
 import sqlite3
+import asyncio
+import functools
 
 from atproto import Client
 
 import main
+import bot
 
-# Initialize Bluesky API client
-client = Client()
-client.login(main.BLUESKY_USERNAME, main.BLUESKY_PASSWORD)
+async def initialize_bluesky_client():
+	global client
+	try:
+		# Initialize Bluesky API client
+		client = Client()
+		client.login(main.BLUESKY_USERNAME, main.BLUESKY_PASSWORD)
+		main.logger.info(f"Bluesky API initalized successfully.\n")
+	except Exception as e:
+		main.logger.error(f"Failed to initialize Bluesky API client: {e}\n")
+		raise
+
+async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
+	"""
+	Tries to re-establish given API connection with exponential falloff.
+	"""
+	def decorator(api_func):
+		@functools.wraps(api_func)
+		async def wrapper(*args, **kwargs):
+			attempt=0
+			while (attempt < max_retries):
+				try:
+					return await api_func(*args, **kwargs)
+				except Exception as e:
+					attempt+=1
+					main.logger.warning(f"Bluesky API call failed! (attempt{attempt}/{max_retries}): {e}")
+
+					if ("quotaExceeded" in str(e) or "403" in str(e)):
+						main.logger.critical(f"Bot has exceeded Bluesky API quota.")
+						bot.bot_internal_message("Bot has exceeded Blueskye API quota!")
+						return None
+					if (attempt == max_retries):
+						main.logger.error(f"Max retries reached. Could not recover API connection.")
+						bot.bot_internal_message("Bot failed to connect to Bluesky API after max retries...")
+
+					wait_time = base_delay * pow(2, attempt - 1)
+					main.logger.info(f"Reinitializing Bluesky API client in {wait_time:.2f} seconds...")
+
+					await asyncio.sleep(wait_time)
+					await initialize_bluesky_client() # reconnect API
+		return wrapper
+	return decorator
 
 # --------------------------------- BLUESKY API INTEGRATION ---------------------------------#
 
@@ -25,7 +66,7 @@ def bluesky_post_already_notified(post_uri):
 		conn.close()
 		return result is not None  # True if post exists, False otherwise
 	except Exception as e:
-		main.logger.error(f"Error checking database if post is already notified: {e}")
+		main.logger.error(f"Error checking database if post is already notified: {e}\n")
 		return False
 
 def bluesky_save_post_to_db(post_uri, content):
@@ -48,7 +89,7 @@ def bluesky_save_post_to_db(post_uri, content):
 		conn.commit()
 		conn.close()
 	except Exception as e:
-		main.logger.error(f"Error saving post to database: {e}")
+		main.logger.error(f"Error saving post to database: {e}\n")
 
 def convert_bluesky_uri_to_url(at_uri):
 	"""
@@ -84,7 +125,7 @@ def extract_media(post):
 					image.append(image)
 				images.append(image.fullsize)  # Get full-size image URL
 		except Exception as e:
-			main.logger.info(f"Error extracting images from post: {e}")
+			main.logger.info(f"Error extracting images from post: {e}\n")
 	return images
 
 def extract_links(post):
@@ -100,6 +141,7 @@ def extract_links(post):
 
 	return full_links  # List of full URLs
 
+@reconnect_api_with_backoff()
 def fetch_bluesky_posts():
 	try:
 		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=1)
@@ -114,5 +156,5 @@ def fetch_bluesky_posts():
 				posts.append({"text": post_text, "uri": post_uri, "post_images": images, "links": links})
 		return posts
 	except Exception as e:
-		main.logger.error(f"Error fetching Bluesky posts: {e}")
+		main.logger.error(f"Error fetching Bluesky posts: {e}\n")
 		return None

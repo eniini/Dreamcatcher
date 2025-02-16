@@ -12,7 +12,17 @@ intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ------------------- DISCORD BOT EVENTS -------------------
+async def bot_internal_message(message):
+	"""
+	Sends a message to the home/debug channel only.
+	"""
+	try:
+		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
+		homeChannel = discord.utils.get(homeGuild.text_channels, id=main.HOME_CHANNEL_ID)
+		await homeChannel.send(f"{message}")
+	except Exception as e:
+		main.logger.error(f"Failed to send a message to the home channel.\n")
+
 @bot.event
 async def on_ready():
 	# Connect to home (debug) server and channel
@@ -25,9 +35,9 @@ async def on_ready():
 		if not homeChannel:
 			main.logger.info(f"Home channel not found! Please check the channel ID in the .env file.\n")
 		else:
-			main.logger.info(f"Connected to home channel: {homeChannel.name}")
+			main.logger.info(f"Connected to home channel: {homeChannel.name}\n")
 			await homeChannel.send(f"Dreamcatcher is now online! 💭")
-			main.logger.info(f"Bot is ready! Logged in as {bot.user.name}#{bot.user.discriminator}")
+			main.logger.info(f"Bot is ready! Logged in as {bot.user.name}#{bot.user.discriminator}\n")
 
 		# Start the Bluesky post sharing task
 		bot.loop.create_task(share_bluesky_posts())
@@ -36,9 +46,7 @@ async def on_ready():
 		bot.loop.create_task(youtube.check_for_youtube_activities())
 
 	except Exception as e:
-		main.logger.error(f"Error connecting to home server: {e}")
-
-
+		main.logger.error(f"Error connecting to home server: {e}\n")
 
 # SUBSCRIBE TO STREAM NOTIFICATIONS
 @bot.command(name="subscribe", help="Subscribe the current channel to receive upcoming stream notifications.")
@@ -48,17 +56,17 @@ async def subscribe(ctx, channel: discord.TextChannel):
 			main.add_channel_to_whitelist(str(channel.id))
 			if (channel.permissions_for(channel.guild.me).send_messages == False):
 				await ctx.send(f"I don't have permission to send messages in {channel.name}. Please try subscribing again after granting the necessary permissions.")
-				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {channel.name}")
+				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {channel.name}\n")
 			else:
 				await ctx.send(f"{channel.name} will now receive upcoming stream notifications!")
-				main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...")
+				main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...\n")
 		else:
 			# adding the current channel to the whitelist
 			add_channel_to_whitelist(str(ctx.channel.id))
 			await ctx.send("This channel will now receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...")
+			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...\n")
 	except Exception as e:
-		main.logger.error(f"Error subscribing discord channel for bot notifications: {e}")
+		main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
 
 # UNSUBSCRIBE FROM STREAM NOTIFICATIONS
 @bot.command(name="unsubscribe", help="Unsubscribe the current channel from receiving upcoming stream notifications.")
@@ -67,13 +75,13 @@ async def unsubscribe(ctx, channel: discord.TextChannel):
 		if (channel):
 			main.remove_channel_from_whitelist(str(channel.id))
 			await ctx.send(f"{channel.name} will no longer receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...")
+			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...\n")
 		else:
 			remove_channel_from_whitelist(str(ctx.channel.id))
 			await ctx.send("This channel will no longer receive upcoming stream notifications!")
 			logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
 	except Exception as e:
-		main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}")
+		main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}\n")
 
 # GET LATEST STREAM
 @bot.command(name="latest_stream", help="Fetches the latest live stream from the monitored YouTube channel.")
@@ -89,7 +97,7 @@ async def latest_stream(ctx):
 		)
 		response = request.execute()
 		# Log the response for debugging
-		main.logger.info(f"[BOT.COMMAND] YouTube API response: {response}")
+		main.logger.info(f"[BOT.COMMAND] YouTube API response: {response}\n")
 
 		if response.get('items', []):
 			item = response['items'][0]
@@ -104,11 +112,8 @@ async def latest_stream(ctx):
 		else:
 			await ctx.send("No live streams are currently available.")
 	except Exception as e:
-		main.logger.info(f"Error fetching latest stream: {e}")
+		main.logger.info(f"Error fetching latest stream: {e}\n")
 		await ctx.send("An error occurred while fetching the latest stream.")
-
-
-
 
 async def share_bluesky_posts():
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
@@ -171,15 +176,14 @@ async def share_bluesky_posts():
 								blsky.bluesky_save_post_to_db(post_uri, content)
 
 							except Exception as e:
-								main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}")
+								main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
 						else:
 							main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")
 		except Exception as e:
-			main.logger.info(f"Error fetching or sending Bluesky posts: {e}")
+			main.logger.info(f"Error fetching or sending Bluesky posts: {e}\n")
 
 		# Wait for 10 seconds before checking again
 		await asyncio.sleep(10)
-
 
 async def notify_discord(activity_type, title, published_at, video_id, post_text):
 	whitelisted_channels = main.get_whitelisted_channels()
@@ -206,6 +210,6 @@ async def notify_discord(activity_type, title, published_at, video_id, post_text
 						f"🔗 Check it out: https://www.youtube.com/channel/{main.NIMI_YOUTUBE_ID}/community"
 					)
 			except Exception as e:
-				main.logger.error(f"Error sending message to channel {channel.name}: {e}")
+				main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
 		else:
-			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")
+			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")

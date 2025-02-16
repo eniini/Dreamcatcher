@@ -6,6 +6,7 @@ import re
 from dotenv import load_dotenv
 
 import bot
+import youtube
 
 # Matches full URLs and truncated ones (www, .com/, domain-like)
 URL_REGEX = re.compile(r'(\b(?:https?://|www\.)?\S+\.\S{2,}(?:/\S*)?)')
@@ -71,7 +72,7 @@ def add_channel_to_whitelist(channel_id):
 		conn.commit()
 		conn.close()
 	except Exception as e:
-		logger.error(f"Error adding channel to whitelist: {e}")
+		logger.error(f"Error adding channel to whitelist: {e}\n")
 
 def remove_channel_from_whitelist(channel_id):
 	try:
@@ -81,7 +82,7 @@ def remove_channel_from_whitelist(channel_id):
 		conn.commit()
 		conn.close()
 	except Exception as e:
-		logger.error(f"Error removing channel from whitelist: {e}")
+		logger.error(f"Error removing channel from whitelist: {e}\n")
 
 def get_whitelisted_channels():
 	try:
@@ -92,13 +93,14 @@ def get_whitelisted_channels():
 		conn.close()
 		return channels
 	except Exception as e:
-		logger.error(f"Error fetching whitelisted channels: {e}")
+		logger.error(f"Error fetching whitelisted channels: {e}\n")
 		return []
 
 if __name__ == "__main__":
 	# Initialize the SQLite database
 	try:
 		init_db()
+		youtube.initialize_youtube_client()
 		bot.bot.run(DISCORD_BOT_TOKEN)
 	except Exception as e:
-		logger.error(f"Error initializing the Discord bot: {e}")
+		logger.error(f"Error initializing the Discord bot: {e}\n")

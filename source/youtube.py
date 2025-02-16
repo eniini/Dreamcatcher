@@ -1,15 +1,51 @@
-import logging
 import sqlite3
 import asyncio
+import functools
 
 from googleapiclient.discovery import build
 
 import main
 import bot
 
-# Initialize Youtube API client
-youtube = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
-print(type(youtube))
+async def initialize_youtube_client():
+	global youtube
+	try:
+		youtube = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
+		main.logger.info(f"Youtube API initalized successfully.\n")
+	except Exception as e:
+		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
+		raise
+
+async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
+	"""
+	Tries to re-establish given API connection with exponential falloff.
+	"""
+	def decorator(api_func):
+		@functools.wraps(api_func)
+		async def wrapper(*args, **kwargs):
+			attempt=0
+			while (attempt < max_retries):
+				try:
+					return await api_func(*args, **kwargs)
+				except Exception as e:
+					attempt+=1
+					main.logger.warning(f"Youtube API call failed! (attempt{attempt}/{max_retries}): {e}")
+
+					if ("quotaExceeded" in str(e) or "403" in str(e)):
+						main.logger.critical(f"Bot has exceeded Youtube API quota.")
+						bot.bot_internal_message("Bot has exceeded Youtube API quota!")
+						return None
+					if (attempt == max_retries):
+						main.logger.error(f"Max retries reached. Could not recover API connection.")
+						bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
+
+					wait_time = base_delay * pow(2, attempt - 1)
+					main.logger.info(f"Reinitializing Youtube API client in {wait_time:.2f} seconds...")
+
+					await asyncio.sleep(wait_time)
+					await initialize_youtube_client() # reconnect API
+		return wrapper
+	return decorator
 
 # --------------------------------- SCHEDULED STREAMS ---------------------------------#
 
@@ -53,6 +89,7 @@ def youtube_save_post_to_db(post_id):
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}")
 
+@reconnect_api_with_backoff()
 async def get_latest_video_from_playlist():
 	"""Fetches the latest video ID from the channel's uploads playlist."""
 	playlist_id = main.NIMI_PLAYLIST_ID
@@ -72,6 +109,7 @@ async def get_latest_video_from_playlist():
 		main.logger.error(f"Error fetching latest vide from playlist: {e}")
 	return None
 
+@reconnect_api_with_backoff()
 async def check_for_youtube_activities():
 	while True:
 		try:
@@ -89,23 +127,24 @@ async def check_for_youtube_activities():
 				published_at = item['snippet']['publishedAt']
 				video_id = None
 				post_text = None
-				
 				if activity_type == "post":
 					post_text = item["snippet"]["description"]
-				
 				# Check if it's a new upload/livestream/short
 				if activity_type == "upload":
 					video_id = await get_latest_video_from_playlist()
-
-				# Notify only if its new content
-				if (youtube_post_already_notified(activity_id)):
-					break
-				else:
-					youtube_save_post_to_db(activity_id)
-				# if the post is new, query YT API again for video details
-				if video_id or post_text:
-					await bot.notify_discord(activity_type, title, published_at, video_id, post_text)
 		except Exception as e:
 			main.logger.error(f"Error fetching Youtube API information or saving it to SQL: {e}")
+			await main.reconnect_api_with_backoff(initialize_youtube_client)
+		# Check if post is new content, send discord notification if yes.
+		try:
+			if (youtube_post_already_notified(activity_id)):
+				break
+			else:
+				youtube_save_post_to_db(activity_id)
+			if video_id or post_text:
+				await bot.notify_discord(activity_type, title, published_at, video_id, post_text)
+		except Exception as e:
+			main.logger.error(f"Error saving Youtube API result to SQL: {e}")		
+
 		# wait for 60 seconds before checking again
 		await asyncio.sleep(60)
