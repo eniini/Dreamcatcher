@@ -7,19 +7,18 @@ from googleapiclient.discovery import build
 import main
 import bot
 
+
 async def initialize_youtube_client():
-	global youtube
+	global youtubeClient
 	try:
-		youtube = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
+		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
 		main.logger.info(f"Youtube API initalized successfully.\n")
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
 		raise
 
-async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""
-	Tries to re-establish given API connection with exponential falloff.
-	"""
+def reconnect_api_with_backoff(max_retries=5, base_delay=2):
+	"""Tries to re-establish given API connection with exponential falloff."""
 	def decorator(api_func):
 		@functools.wraps(api_func)
 		async def wrapper(*args, **kwargs):
@@ -33,17 +32,18 @@ async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 
 					if ("quotaExceeded" in str(e) or "403" in str(e)):
 						main.logger.critical(f"Bot has exceeded Youtube API quota.")
-						bot.bot_internal_message("Bot has exceeded Youtube API quota!")
+						await bot.bot_internal_message("Bot has exceeded Youtube API quota!")
 						return None
 					if (attempt == max_retries):
 						main.logger.error(f"Max retries reached. Could not recover API connection.")
-						bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
+						await bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
 
 					wait_time = base_delay * pow(2, attempt - 1)
 					main.logger.info(f"Reinitializing Youtube API client in {wait_time:.2f} seconds...")
 
 					await asyncio.sleep(wait_time)
-					await initialize_youtube_client() # reconnect API
+					# try to reconnect API
+					await initialize_youtube_client()
 		return wrapper
 	return decorator
 
@@ -97,7 +97,7 @@ async def get_latest_video_from_playlist():
 		return None
 
 	try:
-		request = youtube.playlistItems().list(
+		request = youtubeClient.playlistItems().list(
 			part="contentDetails",
 			playlistId=playlist_id,
 			maxResults=1
@@ -114,7 +114,7 @@ async def check_for_youtube_activities():
 	while True:
 		try:
 			# Fetch the YouTube channel's activities
-			request = youtube.activities().list(
+			request = youtubeClient.activities().list(
 				part='snippet',
 				channelId=main.NIMI_YOUTUBE_ID,
 				maxResults=1
@@ -134,7 +134,7 @@ async def check_for_youtube_activities():
 					video_id = await get_latest_video_from_playlist()
 		except Exception as e:
 			main.logger.error(f"Error fetching Youtube API information or saving it to SQL: {e}")
-			await main.reconnect_api_with_backoff(initialize_youtube_client)
+			await reconnect_api_with_backoff(initialize_youtube_client)
 		# Check if post is new content, send discord notification if yes.
 		try:
 			if (youtube_post_already_notified(activity_id)):

@@ -19,6 +19,7 @@ async def bot_internal_message(message):
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
 		homeChannel = discord.utils.get(homeGuild.text_channels, id=main.HOME_CHANNEL_ID)
+		#homeChannel = bot.fetch_channel(main.HOME_CHANNEL_ID)
 		await homeChannel.send(f"{message}")
 	except Exception as e:
 		main.logger.error(f"Failed to send a message to the home channel.\n")
@@ -30,8 +31,7 @@ async def on_ready():
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
 		if not homeGuild:
 			main.logger.info(f"Home server not found! Please check the server ID in the .env file.\n")
-		
-		homeChannel = discord.utils.get(homeGuild.text_channels, id=main.HOME_CHANNEL_ID)
+		homeChannel = await bot.fetch_channel(main.HOME_CHANNEL_ID)
 		if not homeChannel:
 			main.logger.info(f"Home channel not found! Please check the channel ID in the .env file.\n")
 		else:
@@ -49,10 +49,16 @@ async def on_ready():
 		main.logger.error(f"Error connecting to home server: {e}\n")
 
 # SUBSCRIBE TO STREAM NOTIFICATIONS
-@bot.command(name="subscribe", help="Subscribe the current channel to receive upcoming stream notifications.")
-async def subscribe(ctx, channel: discord.TextChannel):
+@bot.command(name="add", help="Add the current channel or given to receive upcoming stream notifications.")
+async def add_channel_notifications(ctx, *, channel: discord.TextChannel=None):
 	try:
-		if (channel):
+		if (channel == None):
+			# Adding the current channel to the whitelist.
+			main.add_channel_to_whitelist(str(ctx.channel.id))
+			await ctx.send("This channel will now receive upcoming stream notifications!")
+			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...\n")
+		else:
+			# Otherwise, add given channel to the whitelist.
 			main.add_channel_to_whitelist(str(channel.id))
 			if (channel.permissions_for(channel.guild.me).send_messages == False):
 				await ctx.send(f"I don't have permission to send messages in {channel.name}. Please try subscribing again after granting the necessary permissions.")
@@ -60,60 +66,23 @@ async def subscribe(ctx, channel: discord.TextChannel):
 			else:
 				await ctx.send(f"{channel.name} will now receive upcoming stream notifications!")
 				main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...\n")
-		else:
-			# adding the current channel to the whitelist
-			add_channel_to_whitelist(str(ctx.channel.id))
-			await ctx.send("This channel will now receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...\n")
 	except Exception as e:
 		main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
 
 # UNSUBSCRIBE FROM STREAM NOTIFICATIONS
-@bot.command(name="unsubscribe", help="Unsubscribe the current channel from receiving upcoming stream notifications.")
-async def unsubscribe(ctx, channel: discord.TextChannel):
+@bot.command(name="remove", help="Remove the current or given channel from receiving upcoming stream notifications.")
+async def remove_channel_notifications(ctx, *, channel: discord.TextChannel=None):
 	try:
-		if (channel):
+		if (channel == None):
+			main.remove_channel_from_whitelist(str(ctx.channel.id))
+			await ctx.send("This channel will no longer receive upcoming stream notifications!")
+			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
+		else:
 			main.remove_channel_from_whitelist(str(channel.id))
 			await ctx.send(f"{channel.name} will no longer receive upcoming stream notifications!")
 			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...\n")
-		else:
-			remove_channel_from_whitelist(str(ctx.channel.id))
-			await ctx.send("This channel will no longer receive upcoming stream notifications!")
-			logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
 	except Exception as e:
 		main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}\n")
-
-# GET LATEST STREAM
-@bot.command(name="latest_stream", help="Fetches the latest live stream from the monitored YouTube channel.")
-async def latest_stream(ctx):
-	try:
-		# Fetch the latest live stream from the YouTube channel
-		request = youtube.search().list(
-			part='snippet',
-			channelId=main.NIMI_YOUTUBE_ID,
-			type='video',
-			order='date',
-			maxResults=1
-		)
-		response = request.execute()
-		# Log the response for debugging
-		main.logger.info(f"[BOT.COMMAND] YouTube API response: {response}\n")
-
-		if response.get('items', []):
-			item = response['items'][0]
-			video_id = item['id']['videoId']
-			title = item['snippet']['title']
-			video_url = f"https://www.youtube.com/watch?v={video_id}"
-			await ctx.send(
-				f"Nimi's latest Stream was:\n"
-				f"**{title}**\n"
-				f"Watch here: {video_url}"
-			)
-		else:
-			await ctx.send("No live streams are currently available.")
-	except Exception as e:
-		main.logger.info(f"Error fetching latest stream: {e}\n")
-		await ctx.send("An error occurred while fetching the latest stream.")
 
 async def notify_youtube_activity(activity_type, title, published_at, video_id, post_text):
 	whitelisted_channels = main.get_whitelisted_channels()
@@ -151,6 +120,7 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 		# check if the bot has permission to send messages in the channel
 		if channel and channel.permissions_for(channel.guild.me).send_messages:
 			try:
+				main.logger.info(f"Trying to share bluesky post to channel [{channel.name}]\n")
 				# Extract possible truncated links using regex macro
 				truncated_links = main.URL_REGEX.findall(content)
 				# Replace truncated links with full URLs
@@ -181,6 +151,10 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 							if len(images) > 1:
 								for img_url in images[1:]:
 									await channel.send(img_url)  # Send additional images as normal messages
+						else:
+							await channel.send(
+								embed=embed
+							)
 			except Exception as e:
 				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
 		else:

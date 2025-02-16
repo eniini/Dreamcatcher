@@ -18,10 +18,8 @@ async def initialize_bluesky_client():
 		main.logger.error(f"Failed to initialize Bluesky API client: {e}\n")
 		raise
 
-async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""
-	Tries to re-establish given API connection with exponential falloff.
-	"""
+def reconnect_api_with_backoff(max_retries=5, base_delay=2):
+	"""Tries to re-establish given API connection with exponential falloff."""
 	def decorator(api_func):
 		@functools.wraps(api_func)
 		async def wrapper(*args, **kwargs):
@@ -45,7 +43,8 @@ async def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 					main.logger.info(f"Reinitializing Bluesky API client in {wait_time:.2f} seconds...")
 
 					await asyncio.sleep(wait_time)
-					await initialize_bluesky_client() # reconnect API
+					# try to reconnect API
+					await initialize_bluesky_client()
 		return wrapper
 	return decorator
 
@@ -119,13 +118,12 @@ def extract_media(post):
 	if hasattr(post.record, "embed") and hasattr(post.record.embed, "images"):
 		try:
 			for image in post.record.embed.images:
-				if (image.fullsize):
-					images.append(image.fullsize)  # Get full-size image URL
-				else:
-					image.append(image)
-				images.append(image.fullsize)  # Get full-size image URL
+				#if (image.fullsize):
+				#	images.append(image.fullsize)  # Get full-size image URL
+				#else:
+					images.append(image)
 		except Exception as e:
-			main.logger.info(f"Error extracting images from post: {e}\n")
+			main.logger.info(f"Error extracting media from post: {e}\n")
 	return images
 
 def extract_links(post):
@@ -142,9 +140,9 @@ def extract_links(post):
 	return full_links  # List of full URLs
 
 @reconnect_api_with_backoff()
-def fetch_bluesky_posts():
+async def fetch_bluesky_posts():
 	try:
-		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=1)
+		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=5)
 		# Extract post text from FeedViewPost objects
 		posts = []
 		for item in feed.feed:
@@ -163,7 +161,7 @@ async def share_bluesky_posts():
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
 	while True:
 		try:
-			posts = fetch_bluesky_posts()
+			posts = await fetch_bluesky_posts()
 			# Allow time for API response
 			await asyncio.sleep(5)
 			if posts:
@@ -175,14 +173,14 @@ async def share_bluesky_posts():
 					links = post['links']
 					# skip if already sent
 					if (bluesky_post_already_notified(post_uri)):
-						#logger.info(f"⚠️ Skipping duplicate post: {post_uri}")
+						main.logger.info(f"⚠️ Skipping duplicate post: {post_uri}")
 						break
 					# Send notification to all whitelisted Discord channels
-					bot.notify_bluesky_activity(post_uri, content, images, links)
+					await bot.notify_bluesky_activity(post_uri, content, images, links)
 					# Save the post URI and content to the database
 					bluesky_save_post_to_db(post_uri, content)
 		except Exception as e:
-			main.logger.info(f"Error fetching or sending Bluesky posts: {e}\n")
+			main.logger.info(f"Error sharing Bluesky posts: {e}\n")
 
 		# Wait for 10 seconds before checking again
 		await asyncio.sleep(10)

@@ -2,11 +2,13 @@ import os
 import sqlite3
 import logging
 import re
+import asyncio
 
 from dotenv import load_dotenv
 
 import bot
 import youtube
+import blsky
 
 # Matches full URLs and truncated ones (www, .com/, domain-like)
 URL_REGEX = re.compile(r'(\b(?:https?://|www\.)?\S+\.\S{2,}(?:/\S*)?)')
@@ -96,11 +98,16 @@ def get_whitelisted_channels():
 		logger.error(f"Error fetching whitelisted channels: {e}\n")
 		return []
 
-if __name__ == "__main__":
+
+async def main():
 	# Initialize the SQLite database
+	init_db()
+	await youtube.initialize_youtube_client()
+	await blsky.initialize_bluesky_client()
+	await bot.bot.start(DISCORD_BOT_TOKEN)
+
+if __name__ == "__main__":
 	try:
-		init_db()
-		youtube.initialize_youtube_client()
-		bot.bot.run(DISCORD_BOT_TOKEN)
+		asyncio.run(main())
 	except Exception as e:
 		logger.error(f"Error initializing the Discord bot: {e}\n")
