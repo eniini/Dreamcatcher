@@ -120,7 +120,6 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 		# check if the bot has permission to send messages in the channel
 		if channel and channel.permissions_for(channel.guild.me).send_messages:
 			try:
-				main.logger.info(f"Trying to share bluesky post to channel [{channel.name}]\n")
 				# Extract possible truncated links using regex macro
 				truncated_links = main.URL_REGEX.findall(content)
 				# Replace truncated links with full URLs
@@ -128,33 +127,45 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 					# match short links with full links, replace in content
 					for short_link, full_link in zip(truncated_links, links):
 						content = content.replace(short_link, f"[🔗 {short_link}]({full_link})")
-						# Create embed for better formatting
-						post_url = blsky.convert_bluesky_uri_to_url(post_uri)
-						embed = discord.Embed(
-							title="🦋 New Bluesky Post!",
-							description=content,
-							color=discord.Color.blue(),
-							url=post_url
-						)
-						embed.set_author(name="Nimi Nightmare 💭",
-							icon_url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
-						)
-						embed.set_thumbnail(url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg")
-						# fetch reposted image... embed.set_image(url=image_url)
-						if images:
-							embed.set_image(url=images[0]) # Show the first image in the post
-							embed.timestamp = discord.utils.utcnow()
-							await channel.send(
-								embed=embed
-							)
-							# If multiple images exist, send them separately
-							if len(images) > 1:
-								for img_url in images[1:]:
-									await channel.send(img_url)  # Send additional images as normal messages
-						else:
-							await channel.send(
-								embed=embed
-							)
+				# Create embed for better formatting
+				post_url = blsky.convert_bluesky_uri_to_url(post_uri)
+				embed = discord.Embed(
+					title="🦋 New Bluesky Post!",
+					description=content,
+					color=discord.Color.blue(),
+					url=post_url,
+					timestamp = discord.utils.utcnow()
+				)
+				embed.set_author(name="Nimi Nightmare 💭",
+					icon_url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
+				)
+				embed.set_thumbnail(
+					url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
+				)
+				# fetch reposted image... embed.set_image(url=image_url)
+				if images:
+				#	embed.set_image(url=images[0]) # Show the first image in the post
+					#file = discord.File(images[0])
+					await channel.send(
+						embed=embed
+					)
+					await channel.send(images[0])
+				else:
+					await channel.send(
+						embed=embed
+					)
+				# If multiple images exist, send them separately
+				#if len(images) > 1:
+				#	i=0
+				#	for img_url in images[1:]:
+				#		main.logger.info(f"Posting additional images after the embedded post [{i}/{len(images)}]\n")
+				#		await channel.send(img_url)  # Send additional images as normal messages
+				# if there is links in the post, post them invidually to generate auto embedding
+				#elif links:
+				#	i=0
+				#	for link in links[1:]:
+				#		main.logger.info(f"Posting additional links after the embedded post [{i}/{len(links)}]\n")
+				#		await channel.send(link)
 			except Exception as e:
 				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
 		else:

@@ -1,6 +1,7 @@
 import sqlite3
 import asyncio
 import functools
+import re
 
 from atproto import Client
 
@@ -115,13 +116,29 @@ def convert_bluesky_uri_to_url(at_uri):
 def extract_media(post):
 	"""Extracts image URLs from a Bluesky post, if available."""
 	images = []
+
+	# find and extract DID of author
+	did = getattr(post, "author", None) and getattr(post.author, "did", None)
+	if not did and hasattr(post, "uri"):
+		# regex DID from at://URI
+		match = re.match(r"at://([^/]+)/)", post.uri)
+		if match:
+			did = match.group(1)
+
 	if hasattr(post.record, "embed") and hasattr(post.record.embed, "images"):
 		try:
 			for image in post.record.embed.images:
-				#if (image.fullsize):
-				#	images.append(image.fullsize)  # Get full-size image URL
-				#else:
-					images.append(image)
+				if hasattr(image, "image") and hasattr(image.image, "ref"):
+					link = getattr(image.image.ref, "link", None)
+					mime_type = getattr(image.image, "mime_type", "jpeg").split("/")[-1]
+					if link:
+						#main.logger.info(f"link = {link}")
+						#image_url = f"https://cdn.bsky.app/img/feed_thumbnail/{link}"
+						
+						if link and did:
+							# Construct public image URL with DID and file extension
+							image_url = f"https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{link}@{mime_type}"
+							images.append(image_url)
 		except Exception as e:
 			main.logger.info(f"Error extracting media from post: {e}\n")
 	return images
