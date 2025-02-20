@@ -2,6 +2,7 @@ import sqlite3
 import asyncio
 import functools
 import re
+import json
 
 from atproto import Client
 
@@ -121,7 +122,7 @@ def extract_media(post):
 	did = getattr(post, "author", None) and getattr(post.author, "did", None)
 	if not did and hasattr(post, "uri"):
 		# regex DID from at://URI
-		match = re.match(r"at://([^/]+)/)", post.uri)
+		match = re.match(r"at://([^/]+)/", post.uri)
 		if match:
 			did = match.group(1)
 
@@ -132,29 +133,35 @@ def extract_media(post):
 					link = getattr(image.image.ref, "link", None)
 					mime_type = getattr(image.image, "mime_type", "jpeg").split("/")[-1]
 					if link:
-						#main.logger.info(f"link = {link}")
-						#image_url = f"https://cdn.bsky.app/img/feed_thumbnail/{link}"
-						
 						if link and did:
 							# Construct public image URL with DID and file extension
 							image_url = f"https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{link}@{mime_type}"
 							images.append(image_url)
 		except Exception as e:
 			main.logger.info(f"Error extracting media from post: {e}\n")
-	return images
+	return images if images else []
 
 def extract_links(post):
 	"""Extracts full URLs from a Bluesky post's facets."""
 	full_links = []
-
-	if hasattr(post.record, "facets"):  # Ensure facets exist
-		for facet in post.record.facets:
-			if hasattr(facet, "features"):
-				for feature in facet.features:
-					if hasattr(feature, "uri"):  # Hyperlink feature
-						full_links.append(feature.uri)  # Extract full URL
-
-	return full_links  # List of full URLs
+	# Ensure facets (hyperlinks etc.) exist
+	if post.record and post.record.facets:  
+		try:
+			for facet in post.record.facets:
+				# redundancy check
+				if facet.features:
+					for feature in facet.features:
+						# Find specifically the URI element, otherwise nothing is appended.
+						try:
+							uri = getattr(feature, "uri", None)
+							if feature.uri and hasattr(feature, "uri"):
+								full_links.append(feature.uri)
+						except Exception as e:
+							continue	# means that URI element was not found, meaning other type of link?
+										# might be important later
+		except Exception as e:
+			main.logger.info(f"Error extracting links from post: {e}\n")
+	return full_links if full_links else []
 
 @reconnect_api_with_backoff()
 async def fetch_bluesky_posts():
@@ -190,7 +197,6 @@ async def share_bluesky_posts():
 					links = post['links']
 					# skip if already sent
 					if (bluesky_post_already_notified(post_uri)):
-						main.logger.info(f"⚠️ Skipping duplicate post: {post_uri}")
 						break
 					# Send notification to all whitelisted Discord channels
 					await bot.notify_bluesky_activity(post_uri, content, images, links)

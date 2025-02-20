@@ -17,9 +17,9 @@ async def bot_internal_message(message):
 	Sends a message to the home/debug channel only.
 	"""
 	try:
+		# The channels are fetched during startup, no need to async call them now
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
 		homeChannel = discord.utils.get(homeGuild.text_channels, id=main.HOME_CHANNEL_ID)
-		#homeChannel = bot.fetch_channel(main.HOME_CHANNEL_ID)
 		await homeChannel.send(f"{message}")
 	except Exception as e:
 		main.logger.error(f"Failed to send a message to the home channel.\n")
@@ -124,9 +124,9 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 				truncated_links = main.URL_REGEX.findall(content)
 				# Replace truncated links with full URLs
 				if truncated_links and links:
-					# match short links with full links, replace in content
+					# match short links with full links, replace in content (currently with nothing, links are posted separately)
 					for short_link, full_link in zip(truncated_links, links):
-						content = content.replace(short_link, f"[🔗 {short_link}]({full_link})")
+						content = content.replace(short_link, "") #f"[🔗 {short_link}]({full_link})")
 				# Create embed for better formatting
 				post_url = blsky.convert_bluesky_uri_to_url(post_uri)
 				embed = discord.Embed(
@@ -142,30 +142,26 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 				embed.set_thumbnail(
 					url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
 				)
-				# fetch reposted image... embed.set_image(url=image_url)
 				if images:
-				#	embed.set_image(url=images[0]) # Show the first image in the post
-					#file = discord.File(images[0])
+					# Show the first image in the embed post
+					embed.set_image(url=images[0])
 					await channel.send(
 						embed=embed
 					)
-					await channel.send(images[0])
-				else:
-					await channel.send(
-						embed=embed
-					)
-				# If multiple images exist, send them separately
-				#if len(images) > 1:
-				#	i=0
-				#	for img_url in images[1:]:
-				#		main.logger.info(f"Posting additional images after the embedded post [{i}/{len(images)}]\n")
-				#		await channel.send(img_url)  # Send additional images as normal messages
-				# if there is links in the post, post them invidually to generate auto embedding
-				#elif links:
-				#	i=0
-				#	for link in links[1:]:
-				#		main.logger.info(f"Posting additional links after the embedded post [{i}/{len(links)}]\n")
-				#		await channel.send(link)
+				# Send the actual embed image
+				await channel.send(
+					embed=embed
+				)
+				# If multiple images exist, send them separately, ignoring the first one
+				if len(images) > 1:
+					for image in images[1:]:
+						# Send additional images as normal messages
+						await channel.send(image)
+				# Post extracted links after embed message to generate previews correctly
+				if links:
+					for link in links:
+						await channel.send(f"{link}")
+
 			except Exception as e:
 				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
 		else:
