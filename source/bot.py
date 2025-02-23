@@ -1,5 +1,4 @@
 import discord
-import asyncio
 from discord.ext import commands
 
 import main
@@ -12,6 +11,10 @@ intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+#
+#	Discord bot helper & debug functions
+#
+
 async def bot_internal_message(message):
 	"""
 	Sends a message to the home/debug channel only.
@@ -23,6 +26,18 @@ async def bot_internal_message(message):
 		await homeChannel.send(f"{message}")
 	except Exception as e:
 		main.logger.error(f"Failed to send a message to the home channel.\n")
+
+
+async def load_cogs():
+	"""
+	Loads all the discord bot cogs.
+	"""
+	await bot.load_extension("cogs.admin")
+	await bot.load_extension("cogs.notifications")
+
+#
+#	Discord bot events & startup
+#
 
 @bot.event
 async def on_ready():
@@ -39,6 +54,9 @@ async def on_ready():
 			await homeChannel.send(f"Dreamcatcher is now online! 💭")
 			main.logger.info(f"Bot is ready! Logged in as {bot.user.name}#{bot.user.discriminator}\n")
 
+		# Loads the slash commands
+		await load_cogs()
+
 		# Start the Bluesky post sharing task
 		bot.loop.create_task(blsky.share_bluesky_posts())
 
@@ -48,41 +66,9 @@ async def on_ready():
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
 
-# SUBSCRIBE TO STREAM NOTIFICATIONS
-@bot.command(name="add", help="Add the current channel or given to receive upcoming stream notifications.")
-async def add_channel_notifications(ctx, *, channel: discord.TextChannel=None):
-	try:
-		if (channel == None):
-			# Adding the current channel to the whitelist.
-			main.add_channel_to_whitelist(str(ctx.channel.id))
-			await ctx.send("This channel will now receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} subscribed...\n")
-		else:
-			# Otherwise, add given channel to the whitelist.
-			main.add_channel_to_whitelist(str(channel.id))
-			if (channel.permissions_for(channel.guild.me).send_messages == False):
-				await ctx.send(f"I don't have permission to send messages in {channel.name}. Please try subscribing again after granting the necessary permissions.")
-				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {channel.name}\n")
-			else:
-				await ctx.send(f"{channel.name} will now receive upcoming stream notifications!")
-				main.logger.info(f"[BOT.COMMAND] Channel {channel.name} subscribed...\n")
-	except Exception as e:
-		main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
-
-# UNSUBSCRIBE FROM STREAM NOTIFICATIONS
-@bot.command(name="remove", help="Remove the current or given channel from receiving upcoming stream notifications.")
-async def remove_channel_notifications(ctx, *, channel: discord.TextChannel=None):
-	try:
-		if (channel == None):
-			main.remove_channel_from_whitelist(str(ctx.channel.id))
-			await ctx.send("This channel will no longer receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {ctx.channel.name} unsubscribed...")
-		else:
-			main.remove_channel_from_whitelist(str(channel.id))
-			await ctx.send(f"{channel.name} will no longer receive upcoming stream notifications!")
-			main.logger.info(f"[BOT.COMMAND] Channel {channel.name} unsubscribed...\n")
-	except Exception as e:
-		main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}\n")
+#
+#	Discord bot notification functions
+#
 
 async def notify_youtube_activity(activity_type, title, published_at, video_id, post_text):
 	whitelisted_channels = main.get_whitelisted_channels()

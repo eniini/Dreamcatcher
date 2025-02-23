@@ -81,10 +81,16 @@ def remove_channel_from_whitelist(channel_id):
 		conn = sqlite3.connect('whitelist_channels.db')
 		c = conn.cursor()
 		c.execute("DELETE FROM whitelist_channels WHERE channel_id = ?", (channel_id,))
+		if c.rowcount == 0:
+			# no matching item found
+			conn.close()
+			return False
 		conn.commit()
 		conn.close()
+		return True
 	except Exception as e:
 		logger.error(f"Error removing channel from whitelist: {e}\n")
+		return False
 
 def get_whitelisted_channels():
 	try:
