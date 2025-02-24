@@ -1,4 +1,5 @@
 import discord
+import sqlite3
 from discord.ext import commands
 
 import main
@@ -10,6 +11,40 @@ intents = discord.Intents.default()
 intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+#
+#	SQL functions
+#
+
+async def set_manager_role(guild_id, role_id, update=False):
+	try:
+		conn = sqlite3.connect("roles.db")
+		cursor = conn.cursor()
+		if update:
+			cursor.execute("UPDATE roles SET role_id=? WHERE guild_id=?", (role_id, guild_id))
+		else:
+			cursor.execute("INSERT INTO roles (guild_id, role_id) VALUES (?, ?)", (guild_id, role_id))
+		conn.commit()
+		conn.close()
+	except Exception as e:
+		main.logger.error(f"Error caching the discord bot role: {e}\n")
+		raise e
+
+async def get_manager_role(guild_id):
+	try:
+		conn = sqlite3.connect("roles.db")
+		cursor = conn.cursor()
+		cursor.execute("SELECT role_id FROM roles WHERE guild_id=?", (guild_id,))
+		role_id = cursor.fetchone()
+		conn.close()
+		if role_id and role_id[0] is not None:
+			return role_id[0]
+		else:
+			return None
+	except Exception as e:
+		main.logger.error(f"Error getting the discord bot role from SQL: {e}\n")
+		raise e
+
 
 #
 #	Discord bot helper & debug functions
@@ -33,6 +68,7 @@ async def load_cogs():
 	Loads all the discord bot cogs.
 	"""
 	await bot.load_extension("cogs.admin")
+	await bot.load_extension("cogs.setup")
 	await bot.load_extension("cogs.notifications")
 
 #

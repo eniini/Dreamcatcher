@@ -10,6 +10,9 @@ class Admin(commands.Cog):
 
 	@app_commands.command(name="sync", description="Sync commands (dev only)")
 	async def sync_commands(self, interaction: discord.Interaction):
+		"""
+		Allowed to be called only by the server owner in the home/dev server. That means you!
+		"""
 		if interaction.user.id != interaction.guild.owner_id or interaction.guild.id != main.HOME_SERVER_ID:
 			await interaction.response.send_message("You do not have permission to perform this action.", ephemeral=True)
 			return
