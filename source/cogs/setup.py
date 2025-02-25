@@ -5,7 +5,7 @@ from discord.ext import commands
 import bot
 
 #
-# Discord bot setup (server-speicifc roles that have access to manage the bot)
+# Discord bot setup (server-specific roles that have access to manage the bot)
 #
 
 class Setup(commands.Cog):
@@ -18,22 +18,24 @@ class Setup(commands.Cog):
 		guild_id = interaction.guild.id
 
 		# Check if the role is already set
-		if bot.get_manager_role(guild_id):
+		if await bot.get_manager_role(guild_id):
 			try:
-				bot.set_manager_role(guild_id, role.id, update=True)
+				await bot.set_manager_role(guild_id, role.id, update=True)
 			except Exception as e:
 				await interaction.response.send_message(f"❌ Failed to update the role in the database. Please try again later.", ephemeral=True)
+				return
 		else:
 			try:
-				bot.set_manager_role(guild_id, role.id)
+				await bot.set_manager_role(guild_id, role.id)
 			except Exception as e:
 				await interaction.response.send_message(f"❌ Failed to save the role to the database. Please contact the bot owner!", ephemeral=True)
+				return
 
 		await interaction.response.send_message(f"✅ Role {role.name} has been set as the bot manager role.", ephemeral=True)
 		return
 	
 	@commands.Cog.listener()
-	async def on_guild_join(self, guild):
+	async def on_guild_join(self, guild: discord.Guild):
 		# when bot joins a new server, prompt setup
 		if guild.system_channel:
 			await guild.system_channel.send("Hello! Please set a role that will have permission to manage the bot by typing `/setup @role`.")

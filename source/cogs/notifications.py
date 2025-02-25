@@ -13,7 +13,7 @@ class Notifications(commands.Cog):
 	async def add_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
-			if (channel == None):
+			if channel is None:
 				targetChannel = interaction.channel
 			else:
 				targetChannel = channel
@@ -36,7 +36,7 @@ class Notifications(commands.Cog):
 				main.logger.error(f"[BOT.COMMAND.ERROR] Error getting moderation role: {e}\n")
 
 			# check if the bot has permission to send messages to the target channel
-			if (targetChannel.permissions_for(targetChannel.guild.me).send_messages == False):
+			if not targetChannel.permissions_for(targetChannel.guild.me).send_messages:
 				await interaction.response.send_message(f"I don't have permission to send messages in {targetChannel.name}. Please try subscribing again after granting the necessary permissions.",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
@@ -61,12 +61,12 @@ class Notifications(commands.Cog):
 		targetChannel = None
 		try:
 			# if no given channel, defaults to the context
-			if (channel == None):
+			if channel is None:
 				targetChannel = interaction.channel
 			else:
 				targetChannel = channel
 
-			if (main.remove_channel_from_whitelist(targetChannel.id) != True):
+			if not main.remove_channel_from_whitelist(targetChannel.id):
 				await interaction.response.send_message(f"Failed to unsubscribe {targetChannel.name}. Please check that the channel ID is valid.",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] Error removing channel from whitelist: Channel ID {targetChannel.id} not found.\n")
@@ -82,7 +82,7 @@ class Notifications(commands.Cog):
 	async def check_channel_status(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
-			if (channel == None):
+			if channel is None:
 				targetChannel = interaction.channel
 			else:
 				targetChannel = channel

@@ -12,7 +12,7 @@ async def initialize_youtube_client():
 	global youtubeClient
 	try:
 		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
-		main.logger.info(f"Youtube API initalized successfully.\n")
+		main.logger.info(f"Youtube API initialized successfully.\n")
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
 		raise
@@ -22,19 +22,19 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 	def decorator(api_func):
 		@functools.wraps(api_func)
 		async def wrapper(*args, **kwargs):
-			attempt=0
-			while (attempt < max_retries):
+			attempt = 0
+			while attempt < max_retries:
 				try:
 					return await api_func(*args, **kwargs)
 				except Exception as e:
-					attempt+=1
-					main.logger.warning(f"Youtube API call failed! (attempt{attempt}/{max_retries}): {e}")
+					attempt += 1
+					main.logger.warning(f"Youtube API call failed! (attempt {attempt}/{max_retries}): {e}")
 
-					if ("quotaExceeded" in str(e) or "403" in str(e)):
+					if "quotaExceeded" in str(e) or "403" in str(e):
 						main.logger.critical(f"Bot has exceeded Youtube API quota.")
 						await bot.bot_internal_message("Bot has exceeded Youtube API quota!")
 						return None
-					if (attempt == max_retries):
+					if attempt == max_retries:
 						main.logger.error(f"Max retries reached. Could not recover API connection.")
 						await bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
 
@@ -49,7 +49,7 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 
 # --------------------------------- SCHEDULED STREAMS ---------------------------------#
 
-def youtube_post_already_notified(post_id):
+def youtube_post_already_notified(post_id: str) -> bool:
 	"""Checks if the given Youtube post ID is already stored in the database."""
 	try:
 		conn = sqlite3.connect("youtube_posts.db")
@@ -64,11 +64,11 @@ def youtube_post_already_notified(post_id):
 		conn.close()
 		return result is not None  # True if post exists, False otherwise
 	except Exception as e:
-		main.logger.error(f"Error adding YT activity post to database: {e}")
+		main.logger.error(f"Error checking YT activity post in database: {e}")
 		# returning true if SQL query fails for some reason to avoid looping.
 		return True
 
-def youtube_save_post_to_db(post_id):
+def youtube_save_post_to_db(post_id: str):
 	"""Saves the Youtube post ID in the database."""
 	try:
 		conn = sqlite3.connect("youtube_posts.db")
@@ -90,7 +90,7 @@ def youtube_save_post_to_db(post_id):
 		main.logger.error(f"Error saving post to database: {e}")
 
 @reconnect_api_with_backoff()
-async def get_latest_video_from_playlist():
+async def get_latest_video_from_playlist() -> str:
 	"""Fetches the latest video ID from the channel's uploads playlist."""
 	playlist_id = main.NIMI_PLAYLIST_ID
 	if not playlist_id:
@@ -106,7 +106,7 @@ async def get_latest_video_from_playlist():
 		if response["items"]:
 			return response["items"][0]["contentDetails"]["videoId"]
 	except Exception as e:
-		main.logger.error(f"Error fetching latest vide from playlist: {e}")
+		main.logger.error(f"Error fetching latest video from playlist: {e}")
 	return None
 
 @reconnect_api_with_backoff()
@@ -137,7 +137,7 @@ async def check_for_youtube_activities():
 			await reconnect_api_with_backoff(initialize_youtube_client)
 		# Check if post is new content, send discord notification if yes.
 		try:
-			if (youtube_post_already_notified(activity_id)):
+			if youtube_post_already_notified(activity_id):
 				break
 			else:
 				youtube_save_post_to_db(activity_id)

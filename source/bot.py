@@ -16,7 +16,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 #	SQL functions
 #
 
-async def set_manager_role(guild_id, role_id, update=False):
+async def set_manager_role(guild_id: int, role_id: int, update: bool = False) -> None:
 	try:
 		conn = sqlite3.connect("roles.db")
 		cursor = conn.cursor()
@@ -30,7 +30,7 @@ async def set_manager_role(guild_id, role_id, update=False):
 		main.logger.error(f"Error caching the discord bot role: {e}\n")
 		raise e
 
-async def get_manager_role(guild_id):
+async def get_manager_role(guild_id: int) -> int:
 	try:
 		conn = sqlite3.connect("roles.db")
 		cursor = conn.cursor()
@@ -50,7 +50,7 @@ async def get_manager_role(guild_id):
 #	Discord bot helper & debug functions
 #
 
-async def bot_internal_message(message):
+async def bot_internal_message(message: str) -> None:
 	"""
 	Sends a message to the home/debug channel only.
 	"""
@@ -63,7 +63,7 @@ async def bot_internal_message(message):
 		main.logger.error(f"Failed to send a message to the home channel.\n")
 
 
-async def load_cogs():
+async def load_cogs() -> None:
 	"""
 	Loads all the discord bot cogs.
 	"""
@@ -76,7 +76,7 @@ async def load_cogs():
 #
 
 @bot.event
-async def on_ready():
+async def on_ready() -> None:
 	# Connect to home (debug) server and channel
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
@@ -106,7 +106,7 @@ async def on_ready():
 #	Discord bot notification functions
 #
 
-async def notify_youtube_activity(activity_type, title, published_at, video_id, post_text):
+async def notify_youtube_activity(activity_type: str, title: str, published_at: str, video_id: str, post_text: str) -> None:
 	whitelisted_channels = main.get_whitelisted_channels()
 	for channel_id in whitelisted_channels:
 		channel = await bot.fetch_channel(int(channel_id))
@@ -135,7 +135,7 @@ async def notify_youtube_activity(activity_type, title, published_at, video_id, 
 		else:
 			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
-async def notify_bluesky_activity(post_uri, content, images, links):
+async def notify_bluesky_activity(post_uri: str, content: str, images: list, links: list) -> None:
 	whitelisted_channels = main.get_whitelisted_channels()
 	for channel_id in whitelisted_channels:
 		channel = await bot.fetch_channel(int(channel_id))
@@ -187,4 +187,4 @@ async def notify_bluesky_activity(post_uri, content, images, links):
 			except Exception as e:
 				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
 		else:
-			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}")
+			main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")

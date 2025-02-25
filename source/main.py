@@ -66,7 +66,7 @@ def init_db():
 	conn.commit()
 	conn.close()
 
-def add_channel_to_whitelist(channel_id):
+def add_channel_to_whitelist(channel_id: str):
 	try:
 		conn = sqlite3.connect('whitelist_channels.db')
 		c = conn.cursor()
@@ -76,7 +76,7 @@ def add_channel_to_whitelist(channel_id):
 	except Exception as e:
 		logger.error(f"Error adding channel to whitelist: {e}\n")
 
-def remove_channel_from_whitelist(channel_id):
+def remove_channel_from_whitelist(channel_id: str) -> bool:
 	try:
 		conn = sqlite3.connect('whitelist_channels.db')
 		c = conn.cursor()
@@ -92,7 +92,7 @@ def remove_channel_from_whitelist(channel_id):
 		logger.error(f"Error removing channel from whitelist: {e}\n")
 		return False
 
-def get_whitelisted_channels():
+def get_whitelisted_channels() -> list[str]:
 	try:
 		conn = sqlite3.connect('whitelist_channels.db')
 		c = conn.cursor()
