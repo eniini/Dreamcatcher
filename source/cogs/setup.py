@@ -3,14 +3,15 @@ from discord import app_commands
 from discord.ext import commands
 
 import bot
+import main
 
 #
 # Discord bot setup (server-specific roles that have access to manage the bot)
 #
 
 class Setup(commands.Cog):
-	def __init__(self, bot):
-		self.bot = bot
+	def __init__(self, _bot):
+		self._bot = _bot
 
 	@app_commands.command(name="setup", description="Set a role that will have permission to manage the bot.")
 	@app_commands.checks.has_permissions()
@@ -39,3 +40,7 @@ class Setup(commands.Cog):
 		# when bot joins a new server, prompt setup
 		if guild.system_channel:
 			await guild.system_channel.send("Hello! Please set a role that will have permission to manage the bot by typing `/setup @role`.")
+
+async def setup(_bot):
+	await _bot.add_cog(Setup(_bot))
+	main.logger.info(f"Setup cog loaded!\n")

@@ -6,8 +6,8 @@ import main
 import bot
 
 class Notifications(commands.Cog):
-	def __init__(self, bot):
-		self.bot = bot
+	def __init__(self, _bot):
+		self._bot = _bot
 
 	@app_commands.command(name="subscribe", description="Subscribe the current or given channel to receive upcoming stream notifications.")
 	async def add_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
@@ -98,6 +98,6 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error checking discord channel status: {e}\n")
 
-async def setup(bot):
-	await bot.add_cog(Notifications(bot))
+async def setup(_bot):
+	await _bot.add_cog(Notifications(_bot))
 	main.logger.info(f"Notifications cog loaded!\n")
