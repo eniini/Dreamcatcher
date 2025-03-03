@@ -7,6 +7,18 @@ from googleapiclient.discovery import build
 import main
 import bot
 
+# To note: Youtube API has a quota limit of 10,000 units per day.
+# Activities.list() and PlaylistItems.list() both cost 1 unit per request.
+# So for every successful post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual url)
+# this means that optimal wait time for checking new posts varies highly based on:
+# - how many posts can be expected per day,
+# - how many channels are queried
+
+wait_time = 60  # default wait time between checks, in seconds
+
+#
+#	API initialization
+#
 
 async def initialize_youtube_client():
 	global youtubeClient
@@ -47,7 +59,9 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 		return wrapper
 	return decorator
 
-# --------------------------------- SCHEDULED STREAMS ---------------------------------#
+#
+#	SQL functions
+#
 
 def youtube_post_already_notified(post_id: str) -> bool:
 	"""Checks if the given Youtube post ID is already stored in the database."""
@@ -89,9 +103,17 @@ def youtube_save_post_to_db(post_id: str):
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}")
 
+#
+#	Youtube API functions, video/livestream/post fetching
+#
+
 @reconnect_api_with_backoff()
 async def get_latest_video_from_playlist() -> str:
-	"""Fetches the latest video ID from the channel's uploads playlist."""
+	"""
+	Fetches the latest video ID from the channel's uploads playlist.
+	This is the least expensive way to check for new videos. (less Youtube API quota usage)
+	Must be called in order to get the actual video URL, as activities() only returns video ID.
+	"""
 	playlist_id = main.NIMI_PLAYLIST_ID
 	if not playlist_id:
 		return None
@@ -144,7 +166,7 @@ async def check_for_youtube_activities():
 			if video_id or post_text:
 				await bot.notify_youtube_activity(activity_type, title, published_at, video_id, post_text)
 		except Exception as e:
-			main.logger.error(f"Error saving Youtube API result to SQL: {e}")		
+			main.logger.error(f"Error saving Youtube API result to SQL: {e}")
 
-		# wait for 60 seconds before checking again
-		await asyncio.sleep(60)
+		# wait for 60 seconds before checking again.
+		await asyncio.sleep(wait_time)

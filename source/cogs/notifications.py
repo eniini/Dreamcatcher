@@ -10,6 +10,8 @@ class Notifications(commands.Cog):
 		self._bot = _bot
 
 	@app_commands.command(name="subscribe", description="Subscribe the current or given channel to receive upcoming stream notifications.")
+	@app_commands.default_permissions(manage_guild=True)  # Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	async def add_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -57,6 +59,8 @@ class Notifications(commands.Cog):
 			main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
 
 	@app_commands.command(name="unsubscribe", description="Unsubscribe the current or given channel from receiving upcoming stream notifications.")
+	@app_commands.default_permissions(manage_guild=True)  # Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	async def remove_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		targetChannel = None
 		try:

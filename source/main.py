@@ -106,14 +106,21 @@ def get_whitelisted_channels() -> list[str]:
 
 
 async def main():
-	# Initialize the SQLite database
-	init_db()
-	await youtube.initialize_youtube_client()
-	await blsky.initialize_bluesky_client()
-	await bot.bot.start(DISCORD_BOT_TOKEN)
+	try:
+		# Initialize the SQLite database
+		init_db()
+		await youtube.initialize_youtube_client()
+		await blsky.initialize_bluesky_client()
+		await bot.bot.start(DISCORD_BOT_TOKEN)
+	except asyncio.CancelledError:
+		logger.info("Bot shutdown requested, exiting...\n")
 
 if __name__ == "__main__":
 	try:
 		asyncio.run(main())
+	except KeyboardInterrupt:
+		logger.info("Shutting down...\n")
+		exit(0)
 	except Exception as e:
 		logger.error(f"Error initializing the Discord bot: {e}\n")
+		exit(1)

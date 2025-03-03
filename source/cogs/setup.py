@@ -14,7 +14,7 @@ class Setup(commands.Cog):
 		self._bot = _bot
 
 	@app_commands.command(name="setup", description="Set a role that will have permission to manage the bot.")
-	@app_commands.checks.has_permissions()
+	@app_commands.checks.has_permissions(manage_guild=True)
 	async def setup_role(self, interaction: discord.Interaction, role: discord.Role):
 		guild_id = interaction.guild.id
 
