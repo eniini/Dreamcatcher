@@ -2,7 +2,6 @@ import sqlite3
 import asyncio
 import functools
 import re
-import json
 
 from atproto import Client
 

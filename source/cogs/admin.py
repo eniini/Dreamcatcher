@@ -9,6 +9,8 @@ class Admin(commands.Cog):
 		self._bot = _bot
 
 	@app_commands.command(name="sync", description="Sync commands (dev only)")
+	@app_commands.default_permissions(administrator=True)		# Hides command from users without this permission
+	@app_commands.checks.has_permissions(administrator=True)	# Checks if the user has the manage_guild permission
 	async def sync_commands(self, interaction: discord.Interaction):
 		"""
 		Allowed to be called only by the server owner in the home/dev server. That means you!

@@ -3,14 +3,15 @@ from discord.ext import commands
 from discord import app_commands
 
 import main
-import bot
 
 class Notifications(commands.Cog):
 	def __init__(self, _bot):
 		self._bot = _bot
 
+
+
 	@app_commands.command(name="subscribe", description="Subscribe the current or given channel to receive upcoming stream notifications.")
-	@app_commands.default_permissions(manage_guild=True)  # Hides command from users without this permission
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	async def add_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
@@ -19,23 +20,6 @@ class Notifications(commands.Cog):
 				targetChannel = interaction.channel
 			else:
 				targetChannel = channel
-
-			try:
-				moderation_role = await bot.get_manager_role(targetChannel.guild.id)
-				if moderation_role is None:
-					await interaction.response.send_message(f"Please set a role that will have permission to manage the bot by typing `/setup @role`.")
-					main.logger.info(f"[BOT.COMMAND] Tried to set channel subscription without moderation role in {targetChannel.name}\n",
-					  ephemeral=True)
-					return
-				user_role_ids = [role.id for role in interaction.user.roles]
-				if moderation_role not in user_role_ids:
-					await interaction.response.send_message(f"Only users with the {moderation_role} role can subscribe channels.")
-					main.logger.info(f"[BOT.COMMAND] User {interaction.user.id} tried to set channel subscription without moderation role in {targetChannel.name}\n",
-					  ephemeral=True)
-					return
-
-			except Exception as e:
-				main.logger.error(f"[BOT.COMMAND.ERROR] Error getting moderation role: {e}\n")
 
 			# check if the bot has permission to send messages to the target channel
 			if not targetChannel.permissions_for(targetChannel.guild.me).send_messages:
@@ -58,8 +42,10 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
 
+
+
 	@app_commands.command(name="unsubscribe", description="Unsubscribe the current or given channel from receiving upcoming stream notifications.")
-	@app_commands.default_permissions(manage_guild=True)  # Hides command from users without this permission
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	async def remove_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		targetChannel = None
@@ -82,7 +68,11 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}\n")
 
+
+
 	@app_commands.command(name="check_status", description="Check if the current or given channel is receiving notifications.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	async def check_channel_status(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
