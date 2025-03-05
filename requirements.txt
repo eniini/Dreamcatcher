@@ -1,4 +1,5 @@
-atproto==0.0.58
+atproto==0.0.59
 discord.py==2.4.0
 google_api_python_client==2.159.0
 python-dotenv==1.0.1
+urlextract==1.9.0

@@ -81,7 +81,7 @@ def youtube_post_already_notified(post_id: str) -> bool:
 		# returning true if SQL query fails for some reason to avoid looping.
 		return True
 
-def youtube_save_post_to_db(post_id: str):
+def youtube_save_post_to_db(post_id: str) -> None:
 	"""Saves the Youtube post ID in the database."""
 	try:
 		conn = sqlite3.connect("youtube_posts.db")
@@ -131,7 +131,7 @@ async def get_latest_video_from_playlist() -> str:
 	return None
 
 @reconnect_api_with_backoff()
-async def check_for_youtube_activities():
+async def check_for_youtube_activities() -> None:
 	while True:
 		try:
 			# Fetch the YouTube channel's activities

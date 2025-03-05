@@ -105,7 +105,9 @@ def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}\n")
 
-def convert_bluesky_uri_to_url(at_uri: str) -> (str | None):
+from typing import Optional
+
+def convert_bluesky_uri_to_url(at_uri: str) -> Optional[str]:
 	"""
 	Converts a Bluesky AT URI (at://<DID>/<COLLECTION>/<RKEY>) into a valid web URL.
 	Example:
@@ -199,7 +201,7 @@ def replace_urls(text: str, links: list) -> str:
 #
 
 @reconnect_api_with_backoff()
-async def fetch_bluesky_posts() -> (list | None):
+async def fetch_bluesky_posts() -> Optional[list]:
 	"""
 	Fetches the latest Bluesky posts from the API.
 	"""

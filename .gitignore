@@ -4,6 +4,7 @@ __pycache__
 
 .env
 todo
+update_reqs.sh
 
 *.key
 *.key.pub
