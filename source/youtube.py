@@ -113,7 +113,7 @@ async def get_latest_video_from_playlist() -> str:
 	This is the least expensive way to check for new videos. (less Youtube API quota usage)
 	Must be called in order to get the actual video URL, as activities() only returns video ID.
 	"""
-	playlist_id = main.NIMI_PLAYLIST_ID
+	playlist_id = main.TARGET_PLAYLIST_ID
 	if not playlist_id:
 		return None
 
@@ -137,7 +137,7 @@ async def check_for_youtube_activities() -> None:
 			# Fetch the YouTube channel's activities
 			request = youtubeClient.activities().list(
 				part='snippet',
-				channelId=main.NIMI_YOUTUBE_ID,
+				channelId=main.TARGET_YOUTUBE_ID,
 				maxResults=1
 			)
 			response = request.execute()

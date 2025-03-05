@@ -10,6 +10,9 @@ import bot
 
 postFetchCount = 5 # number of posts to fetch from Bluesky API per API call.
 
+# Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
+URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
+
 async def initialize_bluesky_client() -> None:
 	global client
 	global extractor
@@ -116,7 +119,7 @@ def convert_bluesky_uri_to_url(at_uri: str) -> Optional[str]:
 	"""
 	# Bluesky URI format: at://<DID>/<COLLECTION>/<RKEY>
 	# match = re.match(r"at://([^/]+)/([^/]+)/([^/]+)", at_uri)
-	match = main.URI_TO_URL_REGEX.match(at_uri)
+	match = URI_TO_URL_REGEX.match(at_uri)
 
 	if match:
 		did = match.group(1)  # Extract DID
@@ -206,7 +209,7 @@ async def fetch_bluesky_posts() -> Optional[list]:
 	Fetches the latest Bluesky posts from the API.
 	"""
 	try:
-		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=postFetchCount)
+		feed = client.get_author_feed(actor=main.TARGET_BLUESKY_ID, limit=postFetchCount)
 		# Extract post text from FeedViewPost objects
 		posts = []
 		for item in feed.feed:

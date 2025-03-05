@@ -9,21 +9,22 @@ import bot
 import youtube
 import blsky
 
-# Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
-URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
-
 load_dotenv()
 
 # Initialize API keys & Discord Home Server ID
-DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-NIMI_YOUTUBE_ID = os.getenv("NIMI_CHANNEL_ID")
-HOME_SERVER_ID = int(os.getenv("HOME_SERVER_ID"))
-HOME_CHANNEL_ID = os.getenv("HOME_CHANNEL_ID")
-NIMI_PLAYLIST_ID = os.getenv("NIMI_PLAYLIST_ID")
-NIMI_BLUESKY_ID = os.getenv("NIMI_BLUESKY_ID")
-BLUESKY_USERNAME = os.getenv("BLUESKY_USERNAME")
-BLUESKY_PASSWORD = os.getenv("BLUESKY_PASSWORD")
+
+# APIS
+DISCORD_BOT_TOKEN	= os.getenv("DISCORD_BOT_TOKEN")
+YOUTUBE_API_KEY		= os.getenv("YOUTUBE_API_KEY")
+BLUESKY_USERNAME	= os.getenv("BLUESKY_USERNAME")
+BLUESKY_PASSWORD	= os.getenv("BLUESKY_PASSWORD")
+
+HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
+HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
+
+TARGET_YOUTUBE_ID	= os.getenv("TARGET_CHANNEL_ID")
+TARGET_PLAYLIST_ID	= os.getenv("TARGET_PLAYLIST_ID")
+TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
 
 
 # Setup logging for the main process

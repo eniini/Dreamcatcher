@@ -100,7 +100,7 @@ async def notify_youtube_activity(activity_type: str, title: str, published_at: 
 					await channel.send(
 						f"📝 **Nimi just posted a new community message!** 💬\n" \
 						f"_{post_text}_\n" \
-						f"🔗 Check it out: https://www.youtube.com/channel/{main.NIMI_YOUTUBE_ID}/community"
+						f"🔗 Check it out: https://www.youtube.com/channel/{main.TARGET_YOUTUBE_ID}/community"
 					)
 			except Exception as e:
 				main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
