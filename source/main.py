@@ -3,15 +3,11 @@ import sqlite3
 import logging
 import re
 import asyncio
-
 from dotenv import load_dotenv
 
 import bot
 import youtube
 import blsky
-
-# Matches full URLs and truncated ones (www, .com/, domain-like)
-URL_REGEX = re.compile(r'(\b(?:https?://|www\.)?\S+\.\S{2,}(?:/\S*)?)')
 
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
 URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")

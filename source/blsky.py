@@ -2,25 +2,35 @@ import sqlite3
 import asyncio
 import functools
 import re
-
+import urlextract
 from atproto import Client
 
 import main
 import bot
 
-async def initialize_bluesky_client():
+postFetchCount = 5 # number of posts to fetch from Bluesky API per API call.
+
+async def initialize_bluesky_client() -> None:
 	global client
+	global extractor
+	
 	try:
 		# Initialize Bluesky API client
 		client = Client()
 		client.login(main.BLUESKY_USERNAME, main.BLUESKY_PASSWORD)
 		main.logger.info(f"Bluesky API initalized successfully.\n")
+
+		# Initialize URL extractor
+		extractor = urlextract.URLExtract()
+
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Bluesky API client: {e}\n")
 		raise
 
 def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""Tries to re-establish given API connection with exponential falloff."""
+	"""
+	Tries to re-establish given API connection with exponential falloff.
+	"""
 	def decorator(api_func):
 		@functools.wraps(api_func)
 		async def wrapper(*args, **kwargs):
@@ -51,8 +61,10 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 
 # --------------------------------- BLUESKY API INTEGRATION ---------------------------------#
 
-def bluesky_post_already_notified(post_uri):
-	"""Checks if the given Bluesky post URI is already stored in the database."""
+def bluesky_post_already_notified(post_uri: str) -> bool:
+	"""
+	Checks if the given Bluesky post URI is already stored in the database.
+	"""
 	try:
 		conn = sqlite3.connect("bluesky_posts.db")
 		cursor = conn.cursor()
@@ -69,8 +81,10 @@ def bluesky_post_already_notified(post_uri):
 		main.logger.error(f"Error checking database if post is already notified: {e}\n")
 		return False
 
-def bluesky_save_post_to_db(post_uri, content):
-	"""Saves the Bluesky post URI and content in the database."""
+def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
+	"""
+	Saves the Bluesky post URI and content in the database.
+	"""
 	try:
 		conn = sqlite3.connect("bluesky_posts.db")
 		cursor = conn.cursor()
@@ -91,7 +105,7 @@ def bluesky_save_post_to_db(post_uri, content):
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}\n")
 
-def convert_bluesky_uri_to_url(at_uri):
+def convert_bluesky_uri_to_url(at_uri: str) -> (str | None):
 	"""
 	Converts a Bluesky AT URI (at://<DID>/<COLLECTION>/<RKEY>) into a valid web URL.
 	Example:
@@ -113,8 +127,10 @@ def convert_bluesky_uri_to_url(at_uri):
 	
 	return None  # Return None if the URI is invalid or not a post
 
-def extract_media(post):
-	"""Extracts image URLs from a Bluesky post, if available."""
+def extract_media(post: any) -> list:
+	"""
+	Extracts image URLs from a Bluesky post, if available.
+	"""
 	images = []
 
 	# find and extract DID of author
@@ -140,8 +156,10 @@ def extract_media(post):
 			main.logger.info(f"Error extracting media from post: {e}\n")
 	return images if images else []
 
-def extract_links(post):
-	"""Extracts full URLs from a Bluesky post's facets."""
+def extract_links(post: any) -> list:
+	"""
+	Extracts full URLs from a Bluesky post's facets.
+	"""
 	full_links = []
 	# Ensure facets (hyperlinks etc.) exist
 	if post.record and post.record.facets:  
@@ -162,10 +180,31 @@ def extract_links(post):
 			main.logger.info(f"Error extracting links from post: {e}\n")
 	return full_links if full_links else []
 
+def replace_urls(text: str, links: list) -> str:
+	"""
+	Replaces truncated URLs in text with full URLs.
+	NOTE: Currently used to remove truncated URLs from text, as they are posted separately to enable previews.
+	"""
+	truncated_links = extractor.find_urls(text)
+	# Replace truncated links with full URLs
+	if truncated_links and links:
+		# match short links with full links, replace in text
+		for short_link, full_link in zip(truncated_links, links):
+			text = text.replace(short_link, "")
+			# text = text.replace(short_link, f"[🔗 {short_link}]({full_link})")
+	return text
+
+#
+#	Bluesky post sharing task
+#
+
 @reconnect_api_with_backoff()
-async def fetch_bluesky_posts():
+async def fetch_bluesky_posts() -> (list | None):
+	"""
+	Fetches the latest Bluesky posts from the API.
+	"""
 	try:
-		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=5)
+		feed = client.get_author_feed(actor=main.NIMI_BLUESKY_ID, limit=postFetchCount)
 		# Extract post text from FeedViewPost objects
 		posts = []
 		for item in feed.feed:
@@ -180,7 +219,7 @@ async def fetch_bluesky_posts():
 		main.logger.error(f"Error fetching Bluesky posts: {e}\n")
 		return None
 
-async def share_bluesky_posts():
+async def share_bluesky_posts() -> None:
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
 	while True:
 		try:
@@ -191,7 +230,7 @@ async def share_bluesky_posts():
 				for post in posts:
 					#logger.info(f"Post: {post['text']}\n")
 					post_uri = post['uri']
-					content = post['text']
+					content = replace_urls(post['text'], post['links'])
 					images = post['post_images']
 					links = post['links']
 					# skip if already sent

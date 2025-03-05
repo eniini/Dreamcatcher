@@ -1,7 +1,6 @@
 import sqlite3
 import asyncio
 import functools
-
 from googleapiclient.discovery import build
 
 import main

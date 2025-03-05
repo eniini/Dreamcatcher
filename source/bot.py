@@ -109,18 +109,12 @@ async def notify_youtube_activity(activity_type: str, title: str, published_at: 
 
 async def notify_bluesky_activity(post_uri: str, content: str, images: list, links: list) -> None:
 	whitelisted_channels = main.get_whitelisted_channels()
+	
 	for channel_id in whitelisted_channels:
 		channel = await bot.fetch_channel(int(channel_id))
 		# check if the bot has permission to send messages in the channel
 		if channel and channel.permissions_for(channel.guild.me).send_messages:
 			try:
-				# Extract possible truncated links using regex macro
-				truncated_links = main.URL_REGEX.findall(content)
-				# Replace truncated links with full URLs
-				if truncated_links and links:
-					# match short links with full links, replace in content (currently with nothing, links are posted separately)
-					for short_link, full_link in zip(truncated_links, links):
-						content = content.replace(short_link, "") #f"[🔗 {short_link}]({full_link})")
 				# Create embed for better formatting
 				post_url = blsky.convert_bluesky_uri_to_url(post_uri)
 				embed = discord.Embed(
@@ -154,7 +148,7 @@ async def notify_bluesky_activity(post_uri: str, content: str, images: list, lin
 				# Post extracted links after embed message to generate previews correctly
 				if links:
 					for link in links:
-						await channel.send(f"{link}")
+						await channel.send(f"🔗{link}")
 
 			except Exception as e:
 				main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
