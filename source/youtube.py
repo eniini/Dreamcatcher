@@ -8,7 +8,7 @@ import bot
 
 # To note: Youtube API has a quota limit of 10,000 units per day.
 # Activities.list() and PlaylistItems.list() both cost 1 unit per request.
-# So for every successful post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual url)
+# So for every successful new post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual video/livestream url)
 # this means that optimal wait time for checking new posts varies highly based on:
 # - how many posts can be expected per day,
 # - how many channels are queried
@@ -29,7 +29,9 @@ async def initialize_youtube_client():
 		raise
 
 def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""Tries to re-establish given API connection with exponential falloff."""
+	"""
+	Tries to re-establish given API connection with exponential falloff.
+	"""
 	def decorator(api_func):
 		@functools.wraps(api_func)
 		async def wrapper(*args, **kwargs):
@@ -63,7 +65,9 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 #
 
 def youtube_post_already_notified(post_id: str) -> bool:
-	"""Checks if the given Youtube post ID is already stored in the database."""
+	"""
+	Checks if the given Youtube post ID is already stored in the database.
+	"""
 	try:
 		conn = sqlite3.connect("youtube_posts.db")
 		cursor = conn.cursor()
@@ -82,7 +86,9 @@ def youtube_post_already_notified(post_id: str) -> bool:
 		return True
 
 def youtube_save_post_to_db(post_id: str) -> None:
-	"""Saves the Youtube post ID in the database."""
+	"""
+	Saves the Youtube post ID in the database.
+	"""
 	try:
 		conn = sqlite3.connect("youtube_posts.db")
 		cursor = conn.cursor()
@@ -132,6 +138,10 @@ async def get_latest_video_from_playlist() -> str:
 
 @reconnect_api_with_backoff()
 async def check_for_youtube_activities() -> None:
+	video_id = None
+	post_text = None
+
+	main.logger.info(f"Starting the Youtube activity sharing task...\n")
 	while True:
 		try:
 			# Fetch the YouTube channel's activities
@@ -146,24 +156,31 @@ async def check_for_youtube_activities() -> None:
 				activity_type = item['snippet']['type']
 				title = item['snippet']['title']
 				published_at = item['snippet']['publishedAt']
-				video_id = None
-				post_text = None
 				if activity_type == "post":
 					post_text = item["snippet"]["description"]
-				# Check if it's a new upload/livestream/short
-				if activity_type == "upload":
-					video_id = await get_latest_video_from_playlist()
 		except Exception as e:
 			main.logger.error(f"Error fetching Youtube API information or saving it to SQL: {e}")
-			await reconnect_api_with_backoff(initialize_youtube_client)
+			await initialize_youtube_client()
 		# Check if post is new content, send discord notification if yes.
 		try:
-			if youtube_post_already_notified(activity_id):
-				break
+			result = youtube_post_already_notified(activity_id)
+			if result:
+				# Post already notified, skip
+				pass
 			else:
+				# Check if it's a new upload/livestream/short, needs additional query for video URL
+				if activity_type == "upload":
+						video_id = await get_latest_video_from_playlist()
+						if video_id is None:
+							main.logger.error(f"Failed to fetch video ID {activity_id} from playlist!\n")
+
+							# If video URL query fails, save it to database anyway to avoid looping.
+							# (if the ID is for video/livestream it won't be a post, therefore no activity is notified)
+							continue
+
 				youtube_save_post_to_db(activity_id)
-			if video_id or post_text:
-				await bot.notify_youtube_activity(activity_type, title, published_at, video_id, post_text)
+				if video_id or post_text:
+					await bot.notify_youtube_activity(activity_type, title, published_at, video_id, post_text)
 		except Exception as e:
 			main.logger.error(f"Error saving Youtube API result to SQL: {e}")
 
