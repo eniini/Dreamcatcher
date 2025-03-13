@@ -3,7 +3,7 @@ import asyncio
 import functools
 import requests
 import xml.etree.ElementTree as ET
-from fastapi import FastAPI, Request, Query
+from fastapi import Request, Query
 from googleapiclient.discovery import build
 
 import main
@@ -25,10 +25,10 @@ wait_time = 60  # default wait time between checks, in seconds
 
 async def initialize_youtube_client():
 	global youtubeClient
-	global public_webhook_ip
+	global public_webhook_address
 	try:
 		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
-		public_webhook_ip = web.PUBLIC_WEBHOOK_IP
+		public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
 		main.logger.info(f"Youtube API initialized successfully.\n")
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")

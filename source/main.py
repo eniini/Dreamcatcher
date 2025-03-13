@@ -25,6 +25,8 @@ TARGET_YOUTUBE_ID	= os.getenv("TARGET_CHANNEL_ID")
 TARGET_PLAYLIST_ID	= os.getenv("TARGET_PLAYLIST_ID")
 TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
 
+PUBLIC_WEBHOOK_IP = os.getenv("PUBLIC_WEBHOOK_IP")
+
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO) # change this too warning for production!
 logger = logging.getLogger(__name__)
@@ -119,11 +121,10 @@ async def main():
 		await blsky.initialize_bluesky_client()
 		
 		# Run discord bot and web server concurrently
-		bot_task = await asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
-		web_task = await asyncio.create_task(web.run_web_server())
-
-		# keep both running
-		await asyncio.gather(bot_task, web_task)
+		await asyncio.gather(
+			bot.bot.start(DISCORD_BOT_TOKEN),
+			web.run_web_server()
+		)
 
 	except asyncio.CancelledError:
 		logger.info("Bot shutdown requested, exiting...\n")
