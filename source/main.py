@@ -1,13 +1,12 @@
 import os
 import sqlite3
 import logging
-import re
 import asyncio
 from dotenv import load_dotenv
-
 import bot
 import youtube
 import blsky
+import web
 
 load_dotenv()
 
@@ -25,7 +24,6 @@ HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
 TARGET_YOUTUBE_ID	= os.getenv("TARGET_CHANNEL_ID")
 TARGET_PLAYLIST_ID	= os.getenv("TARGET_PLAYLIST_ID")
 TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
-
 
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO) # change this too warning for production!
@@ -49,7 +47,7 @@ def init_db():
 	c.execute("""CREATE TABLE IF NOT EXISTS bluesky_posts
 			(id INTEGER PRIMARY KEY AUTOINCREMENT,
 			uri TEXT UNIQUE,  -- Stores post URI
-			content TEXT,      -- Stores post text
+			content TEXT,     -- Stores post text
 			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
 	conn.commit()
 	conn.close()
@@ -60,6 +58,15 @@ def init_db():
 			(id INTEGER PRIMARY KEY AUTOINCREMENT,
 			activity_id TEXT UNIQUE,  -- Stores activity ID
 			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+	conn.commit()
+	conn.close()
+
+	conn = sqlite3.connect('youtube_channels.db')
+	c = conn.cursor()
+	c.execute("""CREATE TABLE IF NOT EXISTS youtube_channels
+			(server_id TEXT,
+			channel_id TEXT,
+			PRIMARY KEY (server_id, channel_id))""")
 	conn.commit()
 	conn.close()
 
@@ -106,9 +113,18 @@ async def main():
 	try:
 		# Initialize the SQLite database
 		init_db()
+
+		# initialize APIs
 		await youtube.initialize_youtube_client()
 		await blsky.initialize_bluesky_client()
-		await bot.bot.start(DISCORD_BOT_TOKEN)
+		
+		# Run discord bot and web server concurrently
+		bot_task = await asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
+		web_task = await asyncio.create_task(web.run_web_server())
+
+		# keep both running
+		await asyncio.gather(bot_task, web_task)
+
 	except asyncio.CancelledError:
 		logger.info("Bot shutdown requested, exiting...\n")
 

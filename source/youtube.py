@@ -1,10 +1,14 @@
 import sqlite3
 import asyncio
 import functools
+import requests
+import xml.etree.ElementTree as ET
+from fastapi import FastAPI, Request, Query
 from googleapiclient.discovery import build
 
 import main
 import bot
+import web
 
 # To note: Youtube API has a quota limit of 10,000 units per day.
 # Activities.list() and PlaylistItems.list() both cost 1 unit per request.
@@ -21,8 +25,10 @@ wait_time = 60  # default wait time between checks, in seconds
 
 async def initialize_youtube_client():
 	global youtubeClient
+	global public_webhook_ip
 	try:
 		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
+		public_webhook_ip = web.PUBLIC_WEBHOOK_IP
 		main.logger.info(f"Youtube API initialized successfully.\n")
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
@@ -107,6 +113,158 @@ def youtube_save_post_to_db(post_id: str) -> None:
 		conn.close()
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}")
+
+def save_discord_subscription(server_id: str, channel_id: str) -> None:
+	"""
+	Saves the Discord Channel and its associated subscribed Youtube channel ID in the database.
+	"""
+	try:
+		conn = sqlite3.connect("youtube_channels.db")
+		cursor = conn.cursor()
+		cursor.execute("INSERT OR IGNORE INTO youtube_channels (server_id, channel_id) VALUES (?, ?)", (server_id, channel_id))
+		conn.commit()
+		conn.close()
+		# return c.rowcount > 0
+	except Exception as e:
+		main.logger.error(f"Error saving Youtube channel to YT database: {e}")
+
+def remove_discord_subscription(server_id: str, channel_id: str) -> None:
+	"""
+	Removes the Discord Channel and its associated subscribed Youtube channel ID from the database.
+	Automatically calls the Youtube Web Sub unsubscribe function if no other server is subscribed to the same channel.
+	"""
+	try:
+		conn = sqlite3.connect("youtube_channels.db")
+		cursor = conn.cursor()
+		cursor.execute("DELETE FROM youtube_channels WHERE server_id = ? AND channel_id = ?", (server_id, channel_id))
+		conn.commit()
+		
+		# check the SQL database if any other server is subscribed to the same channel
+		cursor.execute("SELECT server_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
+		result = cursor.rowcount
+		if result == 0:
+			# no other server is subscribed to this channel, unsubscribe from Youtube Web Sub
+			unsubscribe_from_channel(channel_id)
+		conn.close()
+	except Exception as e:
+		main.logger.error(f"Error removing Youtube channel from YT database: {e}")
+
+def is_discord_channel_subscribed(channel_id: int) -> bool:
+	"""
+	Queries Discord channel ID from the DB, returns true it exists (has active subscription).
+	"""
+	try:
+		conn = sqlite3.connect("youtube_channels.db")
+		cursor = conn.cursor()
+		cursor.execute("SELECT channel_id FROM youtube_channels WHERE channel_id = ?", (channel_id))
+		result = cursor.rowcount
+		conn.close()
+		return True if result > 0 else False
+	except Exception as e:
+		main.logger.error(f"Error fetching Youtube channel from YT database: {e}")
+
+def get_all_subscribed_channels(channel_id: str) -> list[str]:
+	"""
+	Fetches all discord channels which are subscribed to {channel_id} Youtube channel.
+	"""	
+	try:
+		conn = sqlite3.connect("youtube_channels.db")
+		cursor = conn.cursor()
+		cursor.execute("SELECT server_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
+		result = [row[0] for row in cursor.fetchall()]
+		conn.close()
+		return result
+	except Exception as e:
+		main.logger.error(f"Error fetching Discord channels from YT database: {e}")
+
+#
+#	Webhook endpoints
+#
+
+@web.fastAPIapp.get("/youtube-webhook")
+async def verify_youtube_webhook(
+		hub_mode: str = Query(None),
+		hub_challenge: str = Query(None),
+		hub_topic: str = Query(None)
+	):
+	"""
+	Handles YouTube Web Sub (PubSubHubbub) verification challenge.
+	"""
+	if hub_mode == "subscribe" and hub_challenge:
+		return {"hub.challenge": hub_challenge} # Return the challenge to verify the subscription
+	return "Invalid request"
+
+@web.fastAPIapp.post("/youtube-webhook")
+async def youtube_webhook(request: Request):
+	"""
+	Receives YouTube Web Sub notifications when a new video is posted.
+	"""
+	data = await request.body()
+	# parse received XMl data
+	root = ET.fromstring(data)
+
+	# check if the notification is for a new video
+	# TODO: could also handle activityId for other types of notifications
+
+	for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+		#activity_id = entry.find('{http://www.youtube.com/xml/schemas/2015}activityId').text
+		video_url = entry.find("{http://www.w3.org/2005/Atom}link").attrib["href"]
+		video_id = video_url.split("v=")[-1]
+		#video_id = entry.find("{http://www.w3.org/2005/Atom}link").attrib["href"].split("/")[-1]
+		channel_id = entry.find("{http://www.w3.org/2005/Atom}author").find("{http://www.w3.org/2005/Atom}uri").text.split("/")[-1]
+		title = entry.find("{http://www.w3.org/2005/Atom}title").text
+
+		main.logger.info(f"New video from channel {channel_id}: {video_id}\n")
+
+		# check if post was already notified/processed
+		if youtube_post_already_notified(video_id):
+			main.logger.info(f"Video {video_id} already notified, skipping...\n")
+			return {"status": "ignored"}
+		# save the post to database and notify discord bot
+		youtube_save_post_to_db(video_id)
+		await bot.notify_youtube_activity(
+			activity_type="upload",		#todo: tag for correct content type (upload, livestream, post)
+			title=title,
+			published_at="now",			#todo: get utc timestamp
+			video_id=video_id,
+			post_text=None				#todo: add if community postt
+		)
+
+	# notify discord bot about video...
+
+	return {"status": "ok"}
+
+#
+#	POST request for Youtube Web Sub Hub
+#
+
+def subscribe_to_channel(channel_id: str, callback_url) -> tuple[int, str]:
+	"""
+	Subscribe to a Youtube channel's new video notifications.
+	"""
+	url = "https://pubsubhubbub.appspot.com/subscribe"
+	data = {
+		"hub.callback": callback_url,
+		"hub.mode": "subscribe",
+		"hub.topic": f"https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}",
+		"hub.verify": "async"
+	}
+	response = requests.post(url, data=data)
+	return response.status_code, response.text
+
+def unsubscribe_from_channel(channel_id: str, callback_url) -> tuple[int, str]:
+	"""
+	Unsubscribe from a Youtube channel's new video notifications.
+	"""
+	url = "https://pubsubhubbub.appspot.com/subscribe"
+	data = {
+		"hub.callback": callback_url,
+		"hub.mode": "unsubscribe",
+		"hub.topic": f"https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}",
+		"hub.verify": "async"
+	}
+	response = requests.post(url, data=data)
+	return response.status_code, response.text
 
 #
 #	Youtube API functions, video/livestream/post fetching

@@ -69,7 +69,7 @@ async def on_ready() -> None:
 		bot.loop.create_task(blsky.share_bluesky_posts())
 
 		# Start the YT activity checking task
-		bot.loop.create_task(youtube.check_for_youtube_activities())
+		# bot.loop.create_task(youtube.check_for_youtube_activities())
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
