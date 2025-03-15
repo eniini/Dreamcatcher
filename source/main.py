@@ -121,28 +121,44 @@ async def main():
 		await youtube.initialize_youtube_client()
 		await blsky.initialize_bluesky_client()
 		
+		bot_task = asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
+		web_task = asyncio.create_task(web.run_web_server())
+
 		# Run discord bot and web server concurrently
-		await asyncio.gather(
-			bot.bot.start(DISCORD_BOT_TOKEN),
-			web.run_web_server()
-		)
+		await asyncio.gather(bot_task, web_task)
+
 	except asyncio.CancelledError:
 		logger.info("Bot shutdown requested, exiting...\n")
+	finally:
+		await bot.bot.close()
+		await web.close_web_server()
 
-def shutdown(loop):
-	tasks = asyncio.all_tasks(loop=loop)
-	for task in tasks:
-		task.cancel()
-		loop.run_until_complete(task)
-	loop.stop()
-
-if __name__ == "__main__":
+def main_entry():
+	# Run to manage signal handling
 	loop = asyncio.get_event_loop()
+	asyncio.set_event_loop(loop)
+
+	stop_event = asyncio.Event()
+
+	# set stop event on signal
+	def handle_signal():
+		logger.info("Received shutdown signal, stopping...")
+		stop_event.set()
+
+	# Aadd signal handlers before event loop
 	for sig in (signal.SIGINT, signal.SIGTERM):
-		loop.add_signal_handler(sig, lambda: shutdown(loop))
+		loop.add_signal_handler(sig, handle_signal)
+
 	try:
 		loop.run_until_complete(main())
-	except KeyboardInterrupt:
+	except (KeyboardInterrupt, SystemExit):
 		logger.info("Shutting down...\n")
 	finally:
+		tasks = [t for t in asyncio.all_tasks() if not t.done()]
+		for task in tasks:
+			task.cancel()
+		loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 		loop.close()
+
+if __name__ == "__main__":
+	main_entry()
