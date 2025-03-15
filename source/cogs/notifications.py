@@ -30,16 +30,17 @@ class Notifications(commands.Cog):
 				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
 			else:
 				try:
+					_targetChannel = str(targetChannel.id)
 					#main.add_youtube_channel_to_whitelist(youtube_channel_id, targetChannel.id)
-					if youtube.is_discord_channel_subscribed(targetChannel.id) is True:
+					if youtube.is_discord_channel_subscribed(_targetChannel) is True:
 						await interaction.followup.send(f"This channel already has a YouTube channel subscribed to it. Please unsubscribe the current channel before subscribing a new one.",
 							ephemeral=True)
 					else:
 						# Check if the YouTube channel is already subscribed to the bot, otherwise call subscription endpoint
-						if youtube.get_all_subscribed_channels(targetChannel.id) is not None:
-							youtube.subscribe_to_channel(youtube_channel_id, youtube.public_webhook_ip)
+						if youtube.get_all_subscribed_channels(_targetChannel) is not None:
+							youtube.subscribe_to_channel(youtube_channel_id, youtube.public_webhook_address)
 						# store the [channel, subscription] tuple in the database
-						youtube.save_discord_subscription(targetChannel.id, youtube_channel_id)
+						youtube.save_discord_subscription(_targetChannel, youtube_channel_id)
 				except Exception as e:
 					await interaction.followup.send(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import logging
 import asyncio
+import signal
 from dotenv import load_dotenv
 import bot
 import youtube
@@ -125,16 +126,23 @@ async def main():
 			bot.bot.start(DISCORD_BOT_TOKEN),
 			web.run_web_server()
 		)
-
 	except asyncio.CancelledError:
 		logger.info("Bot shutdown requested, exiting...\n")
 
+def shutdown(loop):
+	tasks = asyncio.all_tasks(loop=loop)
+	for task in tasks:
+		task.cancel()
+		loop.run_until_complete(task)
+	loop.stop()
+
 if __name__ == "__main__":
+	loop = asyncio.get_event_loop()
+	for sig in (signal.SIGINT, signal.SIGTERM):
+		loop.add_signal_handler(sig, lambda: shutdown(loop))
 	try:
-		asyncio.run(main())
+		loop.run_until_complete(main())
 	except KeyboardInterrupt:
 		logger.info("Shutting down...\n")
-		exit(0)
-	except Exception as e:
-		logger.error(f"Error initializing the Discord bot: {e}\n")
-		exit(1)
+	finally:
+		loop.close()

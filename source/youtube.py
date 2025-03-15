@@ -149,7 +149,7 @@ def remove_discord_subscription(server_id: str, channel_id: str) -> None:
 	except Exception as e:
 		main.logger.error(f"Error removing Youtube channel from YT database: {e}")
 
-def is_discord_channel_subscribed(channel_id: int) -> bool:
+def is_discord_channel_subscribed(channel_id: str) -> bool:
 	"""
 	Queries Discord channel ID from the DB, returns true it exists (has active subscription).
 	"""
