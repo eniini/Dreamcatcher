@@ -33,7 +33,7 @@ class Notifications(commands.Cog):
 					_targetChannel = str(targetChannel.id)
 					#main.add_youtube_channel_to_whitelist(youtube_channel_id, targetChannel.id)
 					if youtube.is_discord_channel_subscribed(_targetChannel) is True:
-						await interaction.followup.send(f"This channel already has a YouTube channel subscribed to it. Please unsubscribe the current channel before subscribing a new one.",
+						await interaction.response.send_message(f"This channel already has a YouTube channel subscribed to it. Please unsubscribe the current channel before subscribing a new one.",
 							ephemeral=True)
 					else:
 						# Check if the YouTube channel is already subscribed to the bot, otherwise call subscription endpoint
@@ -42,11 +42,11 @@ class Notifications(commands.Cog):
 						# store the [channel, subscription] tuple in the database
 						youtube.save_discord_subscription(_targetChannel, youtube_channel_id)
 				except Exception as e:
-					await interaction.followup.send(f"Command failed due to an internal error. Please try again later.",
+					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding YouTube channel subscription to given channel: {e}\n")
 
-				await interaction.followup.send(f"{targetChannel.name} will now receive notifications for YouTube channel ID {youtube_channel_id}!",
+				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel ID {youtube_channel_id}!",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] YouTube channel ID {youtube_channel_id} subscribed to {targetChannel.name}...\n")
 
@@ -107,11 +107,11 @@ class Notifications(commands.Cog):
 					main.add_channel_to_whitelist(targetChannel.id)
 
 				except Exception as e:
-					await interaction.followup.send(f"Command failed due to an internal error. Please try again later.",
+					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding channel to whitelist: {e}\n")
 
-				await interaction.followup.send(f"{targetChannel.name} will now receive upcoming stream notifications!",
+				await interaction.response.send_message(f"{targetChannel.name} will now receive upcoming stream notifications!",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] Channel {targetChannel.name} subscribed...\n")
 
@@ -133,11 +133,11 @@ class Notifications(commands.Cog):
 				targetChannel = channel
 
 			if not main.remove_channel_from_whitelist(targetChannel.id):
-				await interaction.followup.send(f"Failed to unsubscribe {targetChannel.name}. Please check that the channel ID is valid.",
+				await interaction.response.send_message(f"Failed to unsubscribe {targetChannel.name}. Please check that the channel ID is valid.",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] Error removing channel from whitelist: Channel ID {targetChannel.id} not found.\n")
 			else:
-				await interaction.followup.send(f"{targetChannel.name} will no longer receive upcoming stream notifications!",
+				await interaction.response.send_message(f"{targetChannel.name} will no longer receive upcoming stream notifications!",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] Channel {targetChannel.name} unsubscribed...")
 
@@ -159,10 +159,10 @@ class Notifications(commands.Cog):
 
 			whitelisted_channels = main.get_whitelisted_channels()
 			if str(targetChannel.id) in whitelisted_channels:
-				await interaction.followup.send(f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications!",
+				await interaction.response.send_message(f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications!",
 					ephemeral=True)
 			else:
-				await interaction.followup.send(f"{targetChannel.name} is not subscribed to receive upcoming stream notifications.",
+				await interaction.response.send_message(f"{targetChannel.name} is not subscribed to receive upcoming stream notifications.",
 					ephemeral=True)
 
 		except Exception as e:
