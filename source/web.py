@@ -7,8 +7,7 @@ import main
 global fastAPIapp
 fastAPIapp = FastAPI()
 
-global server
-server = uvicorn.Server(None)
+server = None
 
 #
 #	The web stack of the app is FastAPI with Uvicorn interacting with a Nginx reverse proxy.
@@ -20,6 +19,7 @@ async def run_web_server():
 	"""
 	Run the internal FastAPI web server with uvicorn.
 	"""
+	global server
 	try:
 		config = uvicorn.Config(fastAPIapp, host="0.0.0.0", port=8001)
 		server = uvicorn.Server(config)
@@ -34,6 +34,7 @@ async def close_web_server():
 	"""
 	Close the internal FastAPI web server.
 	"""
+	global server
 	if server and server.should_exit is False:
 		try:
 			main.logger.info(f"Shutting down FastAPI internal server...\n")

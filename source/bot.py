@@ -1,15 +1,18 @@
 import discord
+import asyncio
 from discord.ext import commands
 
 import main
 import blsky
-import youtube
 
 # Discord bot setup
 intents = discord.Intents.default()
 intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# track the bluesky task so we can cancel it
+bluesky_task = None
 
 #
 #	Discord bot helper & debug functions
@@ -49,6 +52,7 @@ async def load_cogs() -> None:
 
 @bot.event
 async def on_ready() -> None:
+	global bluesky_task
 	# Connect to home (debug) server and channel
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
@@ -66,13 +70,44 @@ async def on_ready() -> None:
 		await load_cogs()
 
 		# Start the Bluesky post sharing task
-		bot.loop.create_task(blsky.share_bluesky_posts())
+		if bluesky_task is None or bluesky_task.done():
+			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
+			#bluesky_task = bot.loop.create_task(blsky.share_bluesky_posts())
 
 		# Start the YT activity checking task
 		# bot.loop.create_task(youtube.check_for_youtube_activities())
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
+
+
+@bot.event
+async def on_disconnect():
+	global bluesky_task
+	main.logger.info(f"Bot is disconnecting... cleaning up tasks.\n")
+
+	# cancel Bluesky task if its running
+	if bluesky_task and not bluesky_task.done():
+		bluesky_task.cancel()
+		try:
+			await bluesky_task
+		except asyncio.CancelledError:
+			main.logger.error("Bluesky task cancelled.")
+
+@bot.event
+async def on_shutdown():
+	global bluesky_task
+	main.logger.info(f"Bot shutdown requested, cleaning up resources...\n")
+
+	# cancel Bluesky task if its running
+	if bluesky_task and not bluesky_task.done():
+		bluesky_task.cancel()
+		try:
+			await bluesky_task
+		except asyncio.CancelledError:
+			main.logger.error("Bluesky task cancelled.")
+	
+	await bot.close()
 
 #
 #	Discord bot notification functions

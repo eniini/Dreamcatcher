@@ -2,7 +2,7 @@ import os
 import sqlite3
 import logging
 import asyncio
-import signal
+import signal 
 from dotenv import load_dotenv
 import bot
 import youtube
@@ -113,58 +113,38 @@ def get_whitelisted_channels() -> list[str]:
 
 
 async def main():
-	try:
-		# Initialize the SQLite database
-		init_db()
+	# Initialize the SQLite database
+	init_db()
 
-		# initialize APIs
-		await youtube.initialize_youtube_client()
-		await blsky.initialize_bluesky_client()
-		
-		bot_task = asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
-		web_task = asyncio.create_task(web.run_web_server())
+	# initialize APIs
+	await youtube.initialize_youtube_client()
+	await blsky.initialize_bluesky_client()
+	
+	bot_task = asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
+	web_task = asyncio.create_task(web.run_web_server())
 
-		# Run discord bot and web server concurrently
-		await asyncio.gather(bot_task, web_task)
+	# Create an event to signal shutdown
+	shutdown_event = asyncio.Event()
 
-	except asyncio.CancelledError:
-		logger.info("Bot shutdown requested, exiting...\n")
-	finally:
-		await bot.bot.close()
-		await web.close_web_server()
-
-def main_entry():
-	# Run to manage signal handling
-	loop = asyncio.new_event_loop()
-	asyncio.set_event_loop(loop)
-
-	stop_event = asyncio.Event()
-
-	# set stop event on signal
+	# Define a signal handler to set the shutdown event
 	def handle_signal():
 		logger.info("Received shutdown signal, stopping...")
-		stop_event.set()
+		shutdown_event.set()
 
-	# Aadd signal handlers before event loop
+	# Add signal handlers
 	for sig in (signal.SIGINT, signal.SIGTERM):
-		loop.add_signal_handler(sig, handle_signal)
+		signal.signal(sig, lambda s, f: handle_signal())
 
-	try:
-		loop.run_until_complete(main())
-	except (KeyboardInterrupt, SystemExit):
-		logger.info("Shutting down...\n")
-	finally:
-		# explicitly close both Discord bot and web server first
-		loop.run_until_complete(bot.bot.close())
-		loop.run_until_complete(web.close_web_server())
+	# Wait for the shutdown event
+	await shutdown_event.wait()
 
-		# cancel remaining tasks
-		tasks = [t for t in asyncio.all_tasks() if not t.done()]
-		for task in tasks:
-			task.cancel()
+	# Shutdown tasks
+	await bot.on_shutdown()
+	await web.close_web_server()
 
-		loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-		loop.close()
+def main_entry():
+	# Run the main function
+	asyncio.run(main())
 
 if __name__ == "__main__":
 	main_entry()
