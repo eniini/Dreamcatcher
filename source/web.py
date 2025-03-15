@@ -8,7 +8,7 @@ global fastAPIapp
 fastAPIapp = FastAPI()
 
 global server
-server = uvicorn.Server()
+server = uvicorn.Server(None)
 
 #
 #	The web stack of the app is FastAPI with Uvicorn interacting with a Nginx reverse proxy.

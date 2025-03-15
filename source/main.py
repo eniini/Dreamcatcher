@@ -135,7 +135,7 @@ async def main():
 
 def main_entry():
 	# Run to manage signal handling
-	loop = asyncio.get_event_loop()
+	loop = asyncio.new_event_loop()
 	asyncio.set_event_loop(loop)
 
 	stop_event = asyncio.Event()
@@ -154,9 +154,15 @@ def main_entry():
 	except (KeyboardInterrupt, SystemExit):
 		logger.info("Shutting down...\n")
 	finally:
+		# explicitly close both Discord bot and web server first
+		loop.run_until_complete(bot.bot.close())
+		loop.run_until_complete(web.close_web_server())
+
+		# cancel remaining tasks
 		tasks = [t for t in asyncio.all_tasks() if not t.done()]
 		for task in tasks:
 			task.cancel()
+
 		loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 		loop.close()
 

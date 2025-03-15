@@ -156,7 +156,7 @@ def is_discord_channel_subscribed(channel_id: str) -> bool:
 	try:
 		conn = sqlite3.connect("youtube_channels.db")
 		cursor = conn.cursor()
-		cursor.execute("SELECT channel_id FROM youtube_channels WHERE channel_id = ?", (channel_id))
+		cursor.execute("SELECT channel_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
 		result = cursor.rowcount
 		conn.close()
 		return True if result > 0 else False
