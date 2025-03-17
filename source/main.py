@@ -8,6 +8,7 @@ import bot
 import youtube
 import blsky
 import web
+import sql
 
 load_dotenv()
 
@@ -35,70 +36,6 @@ logger = logging.getLogger(__name__)
 # Set to store notified streams to avoid duplicate notifications
 notified_streams = set()
 
-# ------------------- DATABASE OPERATIONS -------------------
-# Initialize SQLite databases
-def init_db():
-	conn = sqlite3.connect('whitelist_channels.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS whitelist_channels
-		   (channel_id TEXT PRIMARY KEY)""")
-	conn.commit()
-	conn.close()
-
-	conn = sqlite3.connect('bluesky_posts.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS bluesky_posts
-			(id INTEGER PRIMARY KEY AUTOINCREMENT,
-			uri TEXT UNIQUE,  -- Stores post URI
-			content TEXT,     -- Stores post text
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-	conn.commit()
-	conn.close()
-
-	conn = sqlite3.connect('youtube_posts.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS youtube_posts
-			(id INTEGER PRIMARY KEY AUTOINCREMENT,
-			activity_id TEXT UNIQUE,  -- Stores activity ID
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-	conn.commit()
-	conn.close()
-
-	conn = sqlite3.connect('youtube_channels.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS youtube_channels
-			(server_id TEXT,
-			channel_id TEXT,
-			PRIMARY KEY (server_id, channel_id))""")
-	conn.commit()
-	conn.close()
-
-def add_channel_to_whitelist(channel_id: str):
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("INSERT OR IGNORE INTO whitelist_channels (channel_id) VALUES (?)", (channel_id,))
-		conn.commit()
-		conn.close()
-	except Exception as e:
-		logger.error(f"Error adding channel to whitelist: {e}\n")
-
-def remove_channel_from_whitelist(channel_id: str) -> bool:
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("DELETE FROM whitelist_channels WHERE channel_id = ?", (channel_id,))
-		if c.rowcount == 0:
-			# no matching item found
-			conn.close()
-			return False
-		conn.commit()
-		conn.close()
-		return True
-	except Exception as e:
-		logger.error(f"Error removing channel from whitelist: {e}\n")
-		return False
-
 def get_whitelisted_channels() -> list[str]:
 	try:
 		conn = sqlite3.connect('whitelist_channels.db')
@@ -113,15 +50,18 @@ def get_whitelisted_channels() -> list[str]:
 
 
 async def main():
-	# Initialize the SQLite database
-	init_db()
-
+	try:
+		# Initialize the SQLite database
+		sql.init_db()
+	except Exception as e:
+		logger.error(f"Error initializing content subscription database: {e}")
+		return
+		
 	# initialize APIs
-	await youtube.initialize_youtube_client()
 	await blsky.initialize_bluesky_client()
 	
-	bot_task = asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
-	web_task = asyncio.create_task(web.run_web_server())
+	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
+	asyncio.create_task(web.run_web_server())
 
 	# Create an event to signal shutdown
 	shutdown_event = asyncio.Event()

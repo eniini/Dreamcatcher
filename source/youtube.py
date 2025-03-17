@@ -1,181 +1,16 @@
-import sqlite3
-import asyncio
-import functools
 import requests
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from fastapi import Request, Query
-from googleapiclient.discovery import build
+from googleapiclient.discovery import buil
 
 import main
 import bot
 import web
+import sql
 
-# To note: Youtube API has a quota limit of 10,000 units per day.
-# Activities.list() and PlaylistItems.list() both cost 1 unit per request.
-# So for every successful new post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual video/livestream url)
-# this means that optimal wait time for checking new posts varies highly based on:
-# - how many posts can be expected per day,
-# - how many channels are queried
-
-wait_time = 60  # default wait time between checks, in seconds
-
-#
-#	API initialization
-#
-
-async def initialize_youtube_client():
-	global youtubeClient
-	global public_webhook_address
-	try:
-		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
-		public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
-		main.logger.info(f"Youtube API initialized successfully.\n")
-	except Exception as e:
-		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
-		raise
-
-def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""
-	Tries to re-establish given API connection with exponential falloff.
-	"""
-	def decorator(api_func):
-		@functools.wraps(api_func)
-		async def wrapper(*args, **kwargs):
-			attempt = 0
-			while attempt < max_retries:
-				try:
-					return await api_func(*args, **kwargs)
-				except Exception as e:
-					attempt += 1
-					main.logger.warning(f"Youtube API call failed! (attempt {attempt}/{max_retries}): {e}")
-
-					if "quotaExceeded" in str(e) or "403" in str(e):
-						main.logger.critical(f"Bot has exceeded Youtube API quota.")
-						await bot.bot_internal_message("Bot has exceeded Youtube API quota!")
-						return None
-					if attempt == max_retries:
-						main.logger.error(f"Max retries reached. Could not recover API connection.")
-						await bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
-
-					wait_time = base_delay * pow(2, attempt - 1)
-					main.logger.info(f"Reinitializing Youtube API client in {wait_time:.2f} seconds...")
-
-					await asyncio.sleep(wait_time)
-					# try to reconnect API
-					await initialize_youtube_client()
-		return wrapper
-	return decorator
-
-#
-#	SQL functions
-#
-
-def youtube_post_already_notified(post_id: str) -> bool:
-	"""
-	Checks if the given Youtube post ID is already stored in the database.
-	"""
-	try:
-		conn = sqlite3.connect("youtube_posts.db")
-		cursor = conn.cursor()
-		cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='youtube_posts'")
-		table_exists = cursor.fetchone()
-		if table_exists:
-			cursor.execute("SELECT activity_id FROM youtube_posts WHERE activity_id = ?", (post_id,))
-		else:
-			return False
-		result = cursor.fetchone()
-		conn.close()
-		return result is not None  # True if post exists, False otherwise
-	except Exception as e:
-		main.logger.error(f"Error checking YT activity post in database: {e}")
-		# returning true if SQL query fails for some reason to avoid looping.
-		return True
-
-def youtube_save_post_to_db(post_id: str) -> None:
-	"""
-	Saves the Youtube post ID in the database.
-	"""
-	try:
-		conn = sqlite3.connect("youtube_posts.db")
-		cursor = conn.cursor()
-		# insert new post, ignore if exists
-		cursor.execute("INSERT OR IGNORE INTO youtube_posts (activity_id) VALUES (?)", [post_id])
-		# Delete older posts, keeping only the latest 20
-		cursor.execute("""
-			DELETE FROM youtube_posts 
-			WHERE id NOT IN (
-				SELECT id FROM youtube_posts 
-				ORDER BY timestamp DESC 
-				LIMIT 20
-			)
-		""")
-		conn.commit()
-		conn.close()
-	except Exception as e:
-		main.logger.error(f"Error saving post to database: {e}")
-
-def save_discord_subscription(server_id: str, channel_id: str) -> None:
-	"""
-	Saves the Discord Channel and its associated subscribed Youtube channel ID in the database.
-	"""
-	try:
-		conn = sqlite3.connect("youtube_channels.db")
-		cursor = conn.cursor()
-		cursor.execute("INSERT OR IGNORE INTO youtube_channels (server_id, channel_id) VALUES (?, ?)", (server_id, channel_id))
-		conn.commit()
-		conn.close()
-		# return c.rowcount > 0
-	except Exception as e:
-		main.logger.error(f"Error saving Youtube channel to YT database: {e}")
-
-def remove_discord_subscription(server_id: str, channel_id: str) -> None:
-	"""
-	Removes the Discord Channel and its associated subscribed Youtube channel ID from the database.
-	Automatically calls the Youtube Web Sub unsubscribe function if no other server is subscribed to the same channel.
-	"""
-	try:
-		conn = sqlite3.connect("youtube_channels.db")
-		cursor = conn.cursor()
-		cursor.execute("DELETE FROM youtube_channels WHERE server_id = ? AND channel_id = ?", (server_id, channel_id))
-		conn.commit()
-		
-		# check the SQL database if any other server is subscribed to the same channel
-		cursor.execute("SELECT server_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
-		result = cursor.rowcount
-		if result == 0:
-			# no other server is subscribed to this channel, unsubscribe from Youtube Web Sub
-			unsubscribe_from_channel(channel_id)
-		conn.close()
-	except Exception as e:
-		main.logger.error(f"Error removing Youtube channel from YT database: {e}")
-
-def is_discord_channel_subscribed(channel_id: str) -> bool:
-	"""
-	Queries Discord channel ID from the DB, returns true it exists (has active subscription).
-	"""
-	try:
-		conn = sqlite3.connect("youtube_channels.db")
-		cursor = conn.cursor()
-		cursor.execute("SELECT channel_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
-		result = cursor.rowcount
-		conn.close()
-		return True if result > 0 else False
-	except Exception as e:
-		main.logger.error(f"Error fetching Youtube channel from YT database: {e}")
-
-def get_all_subscribed_channels(channel_id: str) -> list[str]:
-	"""
-	Fetches all discord channels which are subscribed to {channel_id} Youtube channel.
-	"""	
-	try:
-		conn = sqlite3.connect("youtube_channels.db")
-		cursor = conn.cursor()
-		cursor.execute("SELECT server_id FROM youtube_channels WHERE channel_id = ?", (channel_id,))
-		result = [row[0] for row in cursor.fetchall()]
-		conn.close()
-		return result
-	except Exception as e:
-		main.logger.error(f"Error fetching Discord channels from YT database: {e}")
+global public_webhook_address
+public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
 
 #
 #	Webhook endpoints
@@ -217,11 +52,17 @@ async def youtube_webhook(request: Request):
 		main.logger.info(f"New video from channel {channel_id}: {video_id}\n")
 
 		# check if post was already notified/processed
-		if youtube_post_already_notified(video_id):
+		if sql.check_post_match(channel_id, video_id):
 			main.logger.info(f"Video {video_id} already notified, skipping...\n")
 			return {"status": "ignored"}
+ 
 		# save the post to database and notify discord bot
-		youtube_save_post_to_db(video_id)
+		try:
+			sql.update_latest_post(channel_id, video_id, video_url, datetime.now(datetime.timezone.utc).isoformat())
+		except Exception as e:
+			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
+			return {"status": "error"}
+		
 		await bot.notify_youtube_activity(
 			activity_type="upload",		#todo: tag for correct content type (upload, livestream, post)
 			title=title,
@@ -250,6 +91,11 @@ def subscribe_to_channel(channel_id: str, callback_url) -> tuple[int, str]:
 		"hub.verify": "async"
 	}
 	response = requests.post(url, data=data)
+	try:
+		sql.add_social_media_channel("YouTube", channel_id, None)
+	except Exception as e:
+		main.logger.error(f"Error adding YouTube channel ({channel_id}) subscription into database: {e}")
+		return 500, "Internal Server Error"
 	return response.status_code, response.text
 
 def unsubscribe_from_channel(channel_id: str, callback_url) -> tuple[int, str]:
@@ -265,82 +111,3 @@ def unsubscribe_from_channel(channel_id: str, callback_url) -> tuple[int, str]:
 	}
 	response = requests.post(url, data=data)
 	return response.status_code, response.text
-
-#
-#	Youtube API functions, video/livestream/post fetching
-#
-
-@reconnect_api_with_backoff()
-async def get_latest_video_from_playlist() -> str:
-	"""
-	Fetches the latest video ID from the channel's uploads playlist.
-	This is the least expensive way to check for new videos. (less Youtube API quota usage)
-	Must be called in order to get the actual video URL, as activities() only returns video ID.
-	"""
-	playlist_id = main.TARGET_PLAYLIST_ID
-	if not playlist_id:
-		return None
-
-	try:
-		request = youtubeClient.playlistItems().list(
-			part="contentDetails",
-			playlistId=playlist_id,
-			maxResults=1
-		)
-		response = request.execute()
-		if response["items"]:
-			return response["items"][0]["contentDetails"]["videoId"]
-	except Exception as e:
-		main.logger.error(f"Error fetching latest video from playlist: {e}")
-	return None
-
-@reconnect_api_with_backoff()
-async def check_for_youtube_activities() -> None:
-	video_id = None
-	post_text = None
-
-	main.logger.info(f"Starting the Youtube activity sharing task...\n")
-	while True:
-		try:
-			# Fetch the YouTube channel's activities
-			request = youtubeClient.activities().list(
-				part='snippet',
-				channelId=main.TARGET_YOUTUBE_ID,
-				maxResults=1
-			)
-			response = request.execute()
-			for item in response.get('items', []):
-				activity_id = item['id']
-				activity_type = item['snippet']['type']
-				title = item['snippet']['title']
-				published_at = item['snippet']['publishedAt']
-				if activity_type == "post":
-					post_text = item["snippet"]["description"]
-		except Exception as e:
-			main.logger.error(f"Error fetching Youtube API information or saving it to SQL: {e}")
-			await initialize_youtube_client()
-		# Check if post is new content, send discord notification if yes.
-		try:
-			result = youtube_post_already_notified(activity_id)
-			if result:
-				# Post already notified, skip
-				pass
-			else:
-				# Check if it's a new upload/livestream/short, needs additional query for video URL
-				if activity_type == "upload":
-						video_id = await get_latest_video_from_playlist()
-						if video_id is None:
-							main.logger.error(f"Failed to fetch video ID {activity_id} from playlist!\n")
-
-							# If video URL query fails, save it to database anyway to avoid looping.
-							# (if the ID is for video/livestream it won't be a post, therefore no activity is notified)
-							continue
-
-				youtube_save_post_to_db(activity_id)
-				if video_id or post_text:
-					await bot.notify_youtube_activity(activity_type, title, published_at, video_id, post_text)
-		except Exception as e:
-			main.logger.error(f"Error saving Youtube API result to SQL: {e}")
-
-		# wait for 60 seconds before checking again.
-		await asyncio.sleep(wait_time)
