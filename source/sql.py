@@ -25,9 +25,11 @@ def initialize_placeholder_data():
 	Is ran automatically if bot_database.db doesn't exist yet.
 	"""
 	add_discord_channel(main.HOME_CHANNEL_ID, "DREAMCATCHER_HOME_CHANNEL")
-	add_social_media_channel("YouTube", main.TARGET_YOUTUBE_ID, None)
-	add_subscription(main.HOME_CHANNEL_ID, main.TARGET_YOUTUBE_ID)
+	id = add_social_media_channel("YouTube", main.TARGET_YOUTUBE_ID, None)
+	add_subscription(main.HOME_CHANNEL_ID, id)
 
+	id = add_social_media_channel("Bluesky", main.TARGET_BLUESKY_ID, None)
+	add_subscription(main.HOME_CHANNEL_ID, id)
 #
 # Database Connection & Setup
 #

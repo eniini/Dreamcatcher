@@ -104,11 +104,6 @@ def subscribe_to_channel(channel_id: str, callback_url) -> tuple[int, str]:
 		"hub.verify": "async"
 	}
 	response = requests.post(url, data=data)
-	try:
-		sql.add_social_media_channel("YouTube", channel_id, None)
-	except Exception as e:
-		main.logger.error(f"Error adding YouTube channel ({channel_id}) subscription into database: {e}")
-		return 500, "Internal Server Error"
 	return response.status_code, response.text
 
 def unsubscribe_from_channel(channel_id: str, callback_url) -> tuple[int, str]:

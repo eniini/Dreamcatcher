@@ -16,7 +16,7 @@ class Notifications(commands.Cog):
 	@app_commands.command(name="subscribe_youtube_channel", description="Subscribe a discord channel to receive notifications from a YouTube channel.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
-	async def subscribe_youtube_channel(self, interaction: discord.Interaction, media_channel_id: str, channel: discord.TextChannel=None):
+	async def subscribe_youtube_channel(self, interaction: discord.Interaction, youtube_channel_id: str, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
 			if channel is None:
@@ -31,16 +31,30 @@ class Notifications(commands.Cog):
 				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
 			else:
 				try:
-					#main.add_youtube_channel_to_whitelist(media_channel_id, targetChannel.id)
-					if sql.is_discord_channel_subscribed(targetChannel.id, media_channel_id) is True:
-						await interaction.response.send_message(f"This channel already has a subscription to the given channel.",
-							ephemeral=True)
+					# Check if this Discord channel is already in the SQL database.
+					sql.add_discord_channel(targetChannel.id, targetChannel.name)
+					#main.add_youtube_channel_to_whitelist(youtube_channel_id, targetChannel.id)
+					# Check if the given YT channel already has stored ID in database and if its already linked.
+					internal_id = sql.get_id_for_channel_url(youtube_channel_id)
+					if internal_id is not None:
+						# YT channel is already in database, and is already linked to this Discord channel.
+						if sql.is_discord_channel_subscribed(targetChannel.id, internal_id) is True:
+							await interaction.response.send_message(f"This channel already has a subscription to the given channel.",
+								ephemeral=True)
+						# YT channel is already in database, but not linked to this Discord channel.
+						else:
+							sql.add_subscription(targetChannel, internal_id)
+					# YT channel is new, call YT webhook subscription...
 					else:
-						# Check if the YouTube channel is already subscribed to the bot, otherwise call subscription endpoint
-						if sql.get_discord_channels_for_social_channel(media_channel_id) is None:
-							youtube.subscribe_to_channel(media_channel_id, youtube.public_webhook_address)
-						# store the subscription into the database
-						sql.add_subscription(targetChannel, media_channel_id)
+
+						# TODO: Need dedicated way to track YT subscriptions!!!
+
+						status_code = youtube.subscribe_to_channel(youtube_channel_id, youtube.public_webhook_address)
+						# if status_code is not 404, 502 etc.., save activated YouTube subscription to SQL Database.
+						# else log an error for YT webhook failure.
+						# otherwise...
+						internal_id = sql.add_social_media_channel("YouTube", youtube_channel_id, None)
+						sql.add_subscription(targetChannel, internal_id)
 
 				except Exception as e:
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
@@ -48,9 +62,9 @@ class Notifications(commands.Cog):
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding YouTube channel subscription to given channel: {e}\n")
 
 				# Everything went ok, confirm to user
-				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel ID {media_channel_id}!",
+				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel ID {youtube_channel_id}!",
 					ephemeral=True)
-				main.logger.info(f"[BOT.COMMAND] YouTube channel ID {media_channel_id} subscribed to {targetChannel.name}...\n")
+				main.logger.info(f"[BOT.COMMAND] YouTube channel ID {youtube_channel_id} subscribed to {targetChannel.name}...\n")
 
 		except Exception as e:
 			main.logger.error(f"Error subscribing YouTube channel for bot notifications: {e}\n")
