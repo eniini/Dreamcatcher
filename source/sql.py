@@ -1,7 +1,8 @@
+import os
 import sqlite3
 from datetime import datetime, timezone
+
 import main
-import os
 
 global db_file
 db_file = "bot_database.db"
@@ -264,6 +265,27 @@ def get_channel_url(channel_id):
 		return cursor.fetchone()
 	except sqlite3.Error as e:
 		main.logger.error(f"Error getting channel URL: {e}")
+		return None
+	finally:
+		conn.close()
+
+def get_id_for_channel_url(external_url):
+	"""
+	Get the matching database id for given external url if it exists.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return None
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT id FROM SocialMediaChannels
+			WHERE external_url = ?
+		''', (external_url,))
+		row = cursor.fetchone()
+		return row['id'] if row else None
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting internal id for given URL ({external_url}): {e}")
 		return None
 	finally:
 		conn.close()

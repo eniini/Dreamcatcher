@@ -50,19 +50,30 @@ async def youtube_webhook(request: Request):
 
 		main.logger.info(f"New video from channel {channel_id}: {video_id}\n")
 
+		 # Get the internal ID for the channel URL
+		internal_channel_id = sql.get_id_for_channel_url(channel_id)
+		if internal_channel_id is None:
+			main.logger.error(f"Channel ID {channel_id} not found in database.")
+			return {"status": "error"}
+
 		# check if post was already notified/processed
-		if sql.check_post_match(channel_id, video_id):
+		if sql.check_post_match(internal_channel_id, video_id):
 			main.logger.info(f"Video {video_id} already notified, skipping...\n")
 			return {"status": "ignored"}
  
 		# save the post to database and notify discord bot
 		try:
-			sql.update_latest_post(channel_id, video_id, video_url, datetime.now(datetime.timezone.utc).isoformat())
+			sql.update_latest_post(
+				internal_channel_id,
+				video_id,
+				video_url,
+				datetime.now(datetime.timezone.utc).isoformat()
+			)
 		except Exception as e:
 			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
 			return {"status": "error"}
 		# Get all discord channels subscribed to the YouTube channel, then notify each
-		notify_list = sql.get_discord_channels_for_social_channel(channel_id)
+		notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 		for discord_channel in notify_list:
 			await bot.notify_youtube_activity(
 				target_channel=discord_channel,

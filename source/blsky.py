@@ -69,7 +69,11 @@ def bluesky_post_already_notified(post_uri: str) -> bool:
 	Checks if the given Bluesky post URI is already stored in the database.
 	"""
 	try:
-		if sql.check_post_match(main.TARGET_BLUESKY_ID, post_uri) is True:
+		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
+		if internal_channel_id is None:
+			main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+			return False
+		if sql.check_post_match(internal_channel_id, post_uri) is True:
 			return True
 		return False
 	except Exception as e:
@@ -81,7 +85,11 @@ def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
 	Saves the Bluesky post URI and content in the database.
 	"""
 	try:
-		sql.update_latest_post(main.TARGET_BLUESKY_ID, post_uri, content)
+		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
+		if internal_channel_id is None:
+			main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+			return
+		sql.update_latest_post(internal_channel_id, post_uri, content)
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}\n")
 
@@ -218,7 +226,11 @@ async def share_bluesky_posts() -> None:
 					if (bluesky_post_already_notified(post_uri)):
 						break
 					# Send notification to all whitelisted Discord channels
-					notify_list = sql.get_discord_channels_for_social_channel(main.TARGET_BLUESKY_ID)
+					internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
+					if internal_channel_id is None:
+						main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+						continue
+					notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 					for discord_channel in notify_list:
 						await bot.notify_bluesky_activity(main.TARGET_BLUESKY_ID, post_uri, content, images, links)
 					# Save the post URI and content to the database
