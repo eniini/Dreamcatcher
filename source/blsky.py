@@ -43,18 +43,18 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 					return await api_func(*args, **kwargs)
 				except Exception as e:
 					attempt+=1
-					main.logger.warning(f"Bluesky API call failed! (attempt{attempt}/{max_retries}): {e}")
+					main.logger.warning(f"Bluesky API call failed! (attempt{attempt}/{max_retries}): {e}\n")
 
 					if ("quotaExceeded" in str(e) or "403" in str(e)):
-						main.logger.critical(f"Bot has exceeded Bluesky API quota.")
+						main.logger.critical(f"Bot has exceeded Bluesky API quota.\n")
 						bot.bot_internal_message("Bot has exceeded Blueskye API quota!")
 						return None
 					if (attempt == max_retries):
-						main.logger.error(f"Max retries reached. Could not recover API connection.")
+						main.logger.error(f"Max retries reached. Could not recover API connection.\n")
 						bot.bot_internal_message("Bot failed to connect to Bluesky API after max retries...")
 
 					wait_time = base_delay * pow(2, attempt - 1)
-					main.logger.info(f"Reinitializing Bluesky API client in {wait_time:.2f} seconds...")
+					main.logger.info(f"Reinitializing Bluesky API client in {wait_time:.2f} seconds...\n")
 
 					await asyncio.sleep(wait_time)
 					# try to reconnect API
@@ -71,7 +71,7 @@ def bluesky_post_already_notified(post_uri: str) -> bool:
 	try:
 		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
 		if internal_channel_id is None:
-			main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+			main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when checking for duplicate post.\n")
 			return False
 		if sql.check_post_match(internal_channel_id, post_uri) is True:
 			return True
@@ -87,7 +87,7 @@ def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
 	try:
 		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
 		if internal_channel_id is None:
-			main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+			main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when saving post.\n")
 			return
 		sql.update_latest_post(internal_channel_id, post_uri, content)
 	except Exception as e:
@@ -228,7 +228,7 @@ async def share_bluesky_posts() -> None:
 					# Send notification to all whitelisted Discord channels
 					internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
 					if internal_channel_id is None:
-						main.logger.error(f"Bluesky channel ID {main.TARGET_BLUESKY_ID} not found in database.")
+						main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when sharing post.\n")
 						continue
 					notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 					for discord_channel in notify_list:

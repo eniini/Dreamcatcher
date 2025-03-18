@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import pandas as pd
 from datetime import datetime, timezone
 
 import main
@@ -24,12 +25,25 @@ def initialize_placeholder_data():
 	"""
 	Is ran automatically if bot_database.db doesn't exist yet.
 	"""
+	main.logger.info(f"Clean setup, initalizing placeholder data...\n")
+
 	add_discord_channel(main.HOME_CHANNEL_ID, "DREAMCATCHER_HOME_CHANNEL")
 	id = add_social_media_channel("YouTube", main.TARGET_YOUTUBE_ID, None)
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
 	id = add_social_media_channel("Bluesky", main.TARGET_BLUESKY_ID, None)
 	add_subscription(main.HOME_CHANNEL_ID, id)
+
+	conn = sqlite3.connect(db_file)
+	if conn is None:
+		return
+	main.logger.info(f"{pd.read_sql_query("SELECT * FROM DiscordChannels", conn)}\n")
+	main.logger.info(f"{pd.read_sql_query("SELECT * FROM SocialMediaChannels", conn)}\n")
+	main.logger.info(f"{pd.read_sql_query("SELECT * FROM Subscriptions", conn)}\n")
+	main.logger.info(f"{pd.read_sql_query("SELECT * FROM LatestPosts", conn)}\n")
+	conn.commit()
+	conn.close()
+
 #
 # Database Connection & Setup
 #

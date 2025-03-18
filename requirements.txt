@@ -2,6 +2,8 @@ atproto==0.0.59
 discord.py==2.4.0
 fastapi==0.115.11
 google_api_python_client==2.159.0
+pandas==2.2.3
 python-dotenv==1.0.1
+Requests==2.32.3
 urlextract==1.9.0
 uvicorn==0.34.0

@@ -76,9 +76,6 @@ async def on_ready() -> None:
 			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
 			#bluesky_task = bot.loop.create_task(blsky.share_bluesky_posts())
 
-		# Start the YT activity checking task
-		bot.loop.create_task(youtube.check_for_youtube_activities())
-
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
 
@@ -94,7 +91,7 @@ async def on_disconnect():
 		try:
 			await bluesky_task
 		except asyncio.CancelledError:
-			main.logger.error("Bluesky task cancelled.")
+			main.logger.error("Bluesky task cancelled.\n")
 
 @bot.event
 async def on_shutdown():
@@ -107,7 +104,7 @@ async def on_shutdown():
 		try:
 			await bluesky_task
 		except asyncio.CancelledError:
-			main.logger.error("Bluesky task cancelled.")
+			main.logger.error("Bluesky task cancelled.\n")
 	
 	await bot.close()
 
