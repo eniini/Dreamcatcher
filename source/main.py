@@ -36,19 +36,6 @@ logger = logging.getLogger(__name__)
 # Set to store notified streams to avoid duplicate notifications
 notified_streams = set()
 
-def get_whitelisted_channels() -> list[str]:
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("SELECT channel_id FROM whitelist_channels")
-		channels = [row[0] for row in c.fetchall()]
-		conn.close()
-		return channels
-	except Exception as e:
-		logger.error(f"Error fetching whitelisted channels: {e}\n")
-		return []
-
-
 async def main():
 	try:
 		# Initialize the SQLite database

@@ -1,4 +1,3 @@
-import sqlite3
 import asyncio
 import functools
 import re
@@ -219,7 +218,9 @@ async def share_bluesky_posts() -> None:
 					if (bluesky_post_already_notified(post_uri)):
 						break
 					# Send notification to all whitelisted Discord channels
-					await bot.notify_bluesky_activity(post_uri, content, images, links)
+					notify_list = sql.get_discord_channels_for_social_channel(main.TARGET_BLUESKY_ID)
+					for discord_channel in notify_list:
+						await bot.notify_bluesky_activity(main.TARGET_BLUESKY_ID, post_uri, content, images, links)
 					# Save the post URI and content to the database
 					bluesky_save_post_to_db(post_uri, content)
 		except Exception as e:

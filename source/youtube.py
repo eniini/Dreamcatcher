@@ -61,14 +61,17 @@ async def youtube_webhook(request: Request):
 		except Exception as e:
 			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
 			return {"status": "error"}
-		
-		await bot.notify_youtube_activity(
-			activity_type="upload",		#todo: tag for correct content type (upload, livestream, post)
-			title=title,
-			published_at="now",			#todo: get utc timestamp
-			video_id=video_id,
-			post_text=None				#todo: add if community postt
-		)
+		# Get all discord channels subscribed to the YouTube channel, then notify each
+		notify_list = sql.get_discord_channels_for_social_channel(channel_id)
+		for discord_channel in notify_list:
+			await bot.notify_youtube_activity(
+				target_channel=discord_channel,
+				activity_type="upload",		#todo: tag for correct content type (upload, livestream, post)
+				title=title,
+				published_at="now",			#todo: get utc timestamp
+				video_id=video_id,
+				post_text=None				#todo: add if community postt
+			)
 
 	# notify discord bot about video...
 
