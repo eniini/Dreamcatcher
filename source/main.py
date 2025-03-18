@@ -4,8 +4,8 @@ import logging
 import asyncio
 import signal 
 from dotenv import load_dotenv
+
 import bot
-import youtube
 import blsky
 import web
 import sql

@@ -7,6 +7,7 @@ from atproto import Client
 
 import main
 import bot
+import sql
 
 postFetchCount = 5 # number of posts to fetch from Bluesky API per API call.
 
@@ -69,17 +70,9 @@ def bluesky_post_already_notified(post_uri: str) -> bool:
 	Checks if the given Bluesky post URI is already stored in the database.
 	"""
 	try:
-		conn = sqlite3.connect("bluesky_posts.db")
-		cursor = conn.cursor()
-		cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bluesky_posts'")
-		table_exists = cursor.fetchone()
-		if table_exists:
-			cursor.execute("SELECT uri FROM bluesky_posts WHERE uri = ?", (post_uri,))
-		else:
-			return False
-		result = cursor.fetchone()
-		conn.close()
-		return result is not None  # True if post exists, False otherwise
+		if sql.check_post_match(main.TARGET_BLUESKY_ID, post_uri) is True:
+			return True
+		return False
 	except Exception as e:
 		main.logger.error(f"Error checking database if post is already notified: {e}\n")
 		return False
@@ -89,28 +82,12 @@ def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
 	Saves the Bluesky post URI and content in the database.
 	"""
 	try:
-		conn = sqlite3.connect("bluesky_posts.db")
-		cursor = conn.cursor()
-		# insert new post, ignore if exists
-		cursor.execute("INSERT OR IGNORE INTO bluesky_posts (uri, content) VALUES (?, ?)", (post_uri, content))
-
-		# Delete older posts, keeping only the latest 20
-		cursor.execute("""
-			DELETE FROM bluesky_posts 
-			WHERE id NOT IN (
-				SELECT id FROM bluesky_posts 
-				ORDER BY timestamp DESC 
-				LIMIT 20
-			)
-		""")
-		conn.commit()
-		conn.close()
+		sql.update_latest_post(main.TARGET_BLUESKY_ID, post_uri, content)
 	except Exception as e:
 		main.logger.error(f"Error saving post to database: {e}\n")
 
-from typing import Optional
 
-def convert_bluesky_uri_to_url(at_uri: str) -> Optional[str]:
+def convert_bluesky_uri_to_url(at_uri: str):
 	"""
 	Converts a Bluesky AT URI (at://<DID>/<COLLECTION>/<RKEY>) into a valid web URL.
 	Example:
@@ -204,7 +181,7 @@ def replace_urls(text: str, links: list) -> str:
 #
 
 @reconnect_api_with_backoff()
-async def fetch_bluesky_posts() -> Optional[list]:
+async def fetch_bluesky_posts():
 	"""
 	Fetches the latest Bluesky posts from the API.
 	"""
