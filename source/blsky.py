@@ -8,7 +8,7 @@ import main
 import bot
 import sql
 
-postFetchCount = 5 # number of posts to fetch from Bluesky API per API call.
+postFetchCount = 1 # number of posts to fetch from Bluesky API per API call.
 
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
 URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
@@ -232,7 +232,7 @@ async def share_bluesky_posts() -> None:
 						continue
 					notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 					for discord_channel in notify_list:
-						await bot.notify_bluesky_activity(main.TARGET_BLUESKY_ID, post_uri, content, images, links)
+						await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
 					# Save the post URI and content to the database
 					bluesky_save_post_to_db(post_uri, content)
 		except Exception as e:

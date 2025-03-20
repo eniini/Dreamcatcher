@@ -53,14 +53,13 @@ def init_db():
 	Establishes connection to SQLite database.
 	Create tables for DiscordChannels, SocialMediaChannels, and Subscriptions.
 	"""
-	
+	# Check if bot_database.db exists
+	clean_setup = not os.path.exists(db_file)
+
 	conn = get_connection()
 	if conn is None:
 		return
 	cursor = conn.cursor()
-
-	# Check if bot_database.db exists
-	clean_setup = not os.path.exists(db_file)
 
 	# Table for Discord Channels.
 	cursor.execute('''
@@ -299,7 +298,7 @@ def get_id_for_channel_url(external_url):
 			WHERE external_url = ?
 		''', (external_url,))
 		row = cursor.fetchone()
-		return row['id'] if row else None
+		return int(row['id']) if row else None
 	except sqlite3.Error as e:
 		main.logger.error(f"Error getting internal id for given URL ({external_url}): {e}")
 		return None
@@ -309,7 +308,6 @@ def get_id_for_channel_url(external_url):
 def get_discord_channels_for_social_channel(social_media_channel_id):
 	"""
 	Return a list of Discord channels subscribed to a given social media channel.
-	Each row contains the discord_channel_id and subscription_date.
 	"""
 	conn = get_connection()
 	if conn is None:
@@ -317,10 +315,12 @@ def get_discord_channels_for_social_channel(social_media_channel_id):
 	try:
 		cursor = conn.cursor()
 		cursor.execute('''
-			SELECT discord_channel_id, subscription_date FROM Subscriptions
+			SELECT discord_channel_id FROM Subscriptions
 			WHERE social_media_channel_id = ?
 		''', (social_media_channel_id,))
-		return cursor.fetchall()
+		rows = cursor.fetchall()
+		# return a list of discord channel ids
+		return [row['discord_channel_id'] for row in rows]
 	except sqlite3.Error as e:
 		main.logger.error(f"Error getting discord channels: {e}")
 		return []
