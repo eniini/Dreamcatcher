@@ -9,6 +9,7 @@ import bot
 import sql
 
 postFetchCount = 1 # number of posts to fetch from Bluesky API per API call.
+postFetchTimer = 10 # time in seconds to wait before fetching new posts.
 
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
 URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
@@ -212,6 +213,9 @@ async def share_bluesky_posts() -> None:
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
 	while True:
 		try:
+			# for each social media channel marked as Bluesky, fetch posts and share them
+			channels = sql.get_all_social_media_subscriptions_for_platform("Bluesky")
+
 			posts = await fetch_bluesky_posts()
 			# Allow time for API response
 			await asyncio.sleep(5)
@@ -239,4 +243,4 @@ async def share_bluesky_posts() -> None:
 			main.logger.info(f"Error sharing Bluesky posts: {e}\n")
 
 		# Wait for 10 seconds before checking again
-		await asyncio.sleep(10)
+		await asyncio.sleep(postFetchTimer)

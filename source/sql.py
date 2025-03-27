@@ -330,7 +330,7 @@ def get_discord_channels_for_social_channel(social_media_channel_id):
 def list_social_media_subscriptions_for_discord_channel(discord_channel_id):
 	"""
 	List all social media subscriptions for a specific Discord channel.
-	Returns a list of rows containing social media channel details along with subscription metadata.
+	Returns a list of internal IDs of social media channels subscribed to the given Discord channel.
 	"""
 	conn = get_connection()
 	if conn is None:
@@ -338,12 +338,37 @@ def list_social_media_subscriptions_for_discord_channel(discord_channel_id):
 	try:
 		cursor = conn.cursor()
 		cursor.execute('''
-			SELECT s.id, s.platform, s.external_url, s.webhook_id, s.last_post_timestamp, sub.subscription_date
+			SELECT DISTINCT s.id
 			FROM SocialMediaChannels s
 			JOIN Subscriptions sub ON s.id = sub.social_media_channel_id
 			WHERE sub.discord_channel_id = ?
 		''', (discord_channel_id,))
-		return cursor.fetchall()
+		rows = cursor.fetchall()
+		return [row['id'] for row in rows]
+	except sqlite3.Error as e:
+		main.logger.error(f"Error listing subscriptions: {e}")
+		return []
+	finally:
+		conn.close()
+
+def get_all_social_media_subscriptions_for_platform(platform):
+	"""
+	List all social media subscriptions for a specific platform.
+	Returns a list of external URLs for the given platform.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return []
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT DISTINCT s.external_url
+			FROM SocialMediaChannels s
+			JOIN Subscriptions sub ON s.id = sub.social_media_channel_id
+			WHERE s.platform = ?
+		''', (platform,))
+		rows = cursor.fetchall()
+		return [row['external_url'] for row in rows]
 	except sqlite3.Error as e:
 		main.logger.error(f"Error listing subscriptions: {e}")
 		return []
