@@ -43,7 +43,12 @@ class Notifications(commands.Cog):
 								ephemeral=True)
 						# YT channel is already in database, but not linked to this Discord channel.
 						else:
-							sql.add_subscription(targetChannel, internal_id)
+							try:
+								sql.add_subscription(targetChannel.id, internal_id)
+							except Exception as e:
+								main.logger.error(f"Error adding subscription to database: {e}\n")
+								await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+									ephemeral=True)
 					# YT channel is new, call YT webhook subscription...
 					else:
 
@@ -54,7 +59,12 @@ class Notifications(commands.Cog):
 						# else log an error for YT webhook failure.
 						# otherwise...
 						internal_id = sql.add_social_media_channel("YouTube", youtube_channel_id, None)
-						sql.add_subscription(targetChannel, internal_id)
+						try:
+							sql.add_subscription(targetChannel.id, internal_id)
+						except Exception as e:
+							main.logger.error(f"Error adding subscription to database: {e}\n")
+							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+								ephemeral=True)
 
 				except Exception as e:
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",

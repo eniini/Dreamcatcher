@@ -8,7 +8,7 @@ import main
 import bot
 import sql
 
-postFetchCount = 1 # number of posts to fetch from Bluesky API per API call.
+postFetchCount = 5 # number of posts to fetch from Bluesky API per API call. (More than one is necessary if multiple posts are made in a short time)
 postFetchTimer = 10 # time in seconds to wait before fetching new posts.
 
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
@@ -75,6 +75,7 @@ def bluesky_post_already_notified(post_uri: str) -> bool:
 			main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when checking for duplicate post.\n")
 			return False
 		if sql.check_post_match(internal_channel_id, post_uri) is True:
+			main.logger.info(f"Post {post_uri} already notified, skipping...\n")
 			return True
 		return False
 	except Exception as e:
@@ -217,9 +218,17 @@ async def share_bluesky_posts() -> None:
 			channels = sql.get_all_social_media_subscriptions_for_platform("Bluesky")
 
 			posts = await fetch_bluesky_posts()
+			posts.reverse()  # Reverse the order of posts to get the most recent first
 			# Allow time for API response
 			await asyncio.sleep(5)
 			if posts:
+				# check the the most recent post and compare that against the stored post in the database
+				# if the post matches, break and wait for the next fetch
+				post_uri = posts[0]['uri']
+				if bluesky_post_already_notified(post_uri):
+					main.logger.info(f"Latest post already notified, skipping...\n")
+					continue
+				# Loop through the posts and send notifications
 				for post in posts:
 					#logger.info(f"Post: {post['text']}\n")
 					post_uri = post['uri']

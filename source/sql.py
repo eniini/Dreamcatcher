@@ -277,7 +277,8 @@ def get_channel_url(channel_id):
 			SELECT external_url FROM SocialMediaChannels
 			WHERE id = ?
 		''', (channel_id,))
-		return cursor.fetchone()
+		row = cursor.fetchone()
+		return row['external_url'] if row else None
 	except sqlite3.Error as e:
 		main.logger.error(f"Error getting channel URL: {e}")
 		return None

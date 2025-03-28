@@ -79,6 +79,15 @@ async def on_ready() -> None:
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
 
+@bot.event
+async def on_resumed():
+	global bluesky_task
+	if bluesky_task is None or bluesky_task.done():
+		try:
+			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
+			await bot_internal_message(f"Bot resumed, spinning bluesky task back up again...\n")
+		except Exception as e:
+			main.logger.error(f"Error resuming Bluesky task by Discord bot: {e}\n")
 
 @bot.event
 async def on_disconnect():
