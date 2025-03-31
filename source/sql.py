@@ -37,10 +37,10 @@ def initialize_placeholder_data():
 	conn = sqlite3.connect(db_file)
 	if conn is None:
 		return
-	main.logger.info(f"{pd.read_sql_query("SELECT * FROM DiscordChannels", conn)}\n")
-	main.logger.info(f"{pd.read_sql_query("SELECT * FROM SocialMediaChannels", conn)}\n")
-	main.logger.info(f"{pd.read_sql_query("SELECT * FROM Subscriptions", conn)}\n")
-	main.logger.info(f"{pd.read_sql_query("SELECT * FROM LatestPosts", conn)}\n")
+	main.logger.info(f"{pd.read_sql_query('SELECT * FROM DiscordChannels', conn)}\n")
+	main.logger.info(f"{pd.read_sql_query('SELECT * FROM SocialMediaChannels', conn)}\n")
+	main.logger.info(f"{pd.read_sql_query('SELECT * FROM Subscriptions', conn)}\n")
+	main.logger.info(f"{pd.read_sql_query('SELECT * FROM LatestPosts', conn)}\n")
 	conn.commit()
 	conn.close()
 

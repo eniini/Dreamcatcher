@@ -24,6 +24,7 @@ async def verify_youtube_webhook(
 	"""
 	Handles YouTube Web Sub (PubSubHubbub) verification challenge.
 	"""
+	main.logger.info(f"Received YouTube Web Sub verification request: {hub_mode}, {hub_challenge}, {hub_topic}\n")
 	if hub_mode == "subscribe" and hub_challenge:
 		return {"hub.challenge": hub_challenge} # Return the challenge to verify the subscription
 	return "Invalid request"

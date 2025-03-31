@@ -21,9 +21,9 @@ async def run_web_server():
 	"""
 	global server
 	try:
-		config = uvicorn.Config(fastAPIapp, host="0.0.0.0", port=8001)
+		config = uvicorn.Config(fastAPIapp, host="127.0.0.1", port=8001) # internal nginx reverse proxy
 		server = uvicorn.Server(config)
-		main.logger.info(f"Starting FastAPI internal server at http://{main.PUBLIC_WEBHOOK_IP}:8001. Expecting Nginx forward to port 8000...\n")
+		main.logger.info(f"Starting FastAPI internal server at 127.0.0.1:8001. Expecting Nginx forward to http://{main.PUBLIC_WEBHOOK_IP}:8000...\n")
 		await server.serve()
 	except asyncio.CancelledError:
 		main.logger.info("FastAPI server shutdown requested.\n")
