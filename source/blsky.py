@@ -245,7 +245,8 @@ async def share_bluesky_posts() -> None:
 						continue
 					notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 					for discord_channel in notify_list:
-						await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
+						main.logger.info(f"Debugging: Sending Bluesky post {post_uri} to Discord channel {discord_channel})\n")
+						# await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
 					# Save the post URI and content to the database
 					bluesky_save_post_to_db(post_uri, content)
 		except Exception as e:
