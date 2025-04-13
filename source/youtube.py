@@ -29,6 +29,11 @@ async def verify_youtube_webhook(
 		return {"hub.challenge": hub_challenge} # Return the challenge to verify the subscription
 	return "Invalid request", 400
 
+YOUTUBE_NS = {
+	"atom": "http://www.w3.org/2005/Atom",
+	"yt": "http://www.youtube.com/xml/schemas/2015"
+}
+
 @web.fastAPIapp.post("/youtube-webhook")
 async def youtube_webhook(request: Request):
 	"""
@@ -36,31 +41,54 @@ async def youtube_webhook(request: Request):
 	"""
 	data = await request.body()
 	# parse received XMl data
-	root = ET.fromstring(data)
+	try:
+		root = ET.fromstring(data)
+	except ET.ParseError as e:
+		main.logger.error(f"Error parsing XML data: {e}")
+		return {"status": "error", "detail": "Invalid XML data"}
 
 	# check if the notification is for a new video
 	# TODO: could also handle activityId for other types of notifications
 
-	for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-		#activity_id = entry.find('{http://www.youtube.com/xml/schemas/2015}activityId').text
-		video_url = entry.find("{http://www.w3.org/2005/Atom}link").attrib["href"]
-		video_id = video_url.split("v=")[-1]
-		#video_id = entry.find("{http://www.w3.org/2005/Atom}link").attrib["href"].split("/")[-1]
-		channel_id = entry.find("{http://www.w3.org/2005/Atom}author").find("{http://www.w3.org/2005/Atom}uri").text.split("/")[-1]
-		title = entry.find("{http://www.w3.org/2005/Atom}title").text
+	for entry in root.findall("atom:entry", YOUTUBE_NS):
+		# Video ID
+		video_id = entry.find("yt:videoId", YOUTUBE_NS)
+		video_id = video_id.text if video_id is not None else None
 
-		main.logger.info(f"New video from channel {channel_id}: {video_id}\n")
+		# Title
+		title = entry.find("atom:title", YOUTUBE_NS)
+		title = title.text if title is not None else "(No title)"
 
-		 # Get the internal ID for the channel URL
+		# Channel ID
+		channel_id = entry.find("yt:channelId", YOUTUBE_NS)
+		channel_id = channel_id.text if channel_id is not None else "UnknownChannel"
+
+		# Video URL
+		video_url = None
+		for link in entry.findall("atom:link", YOUTUBE_NS):
+			if link.attrib.get("rel") == "alternate":
+				video_url = link.attrib.get("href")
+		if not video_url and video_id:
+			video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+		# Logging for debug/testing
+		main.logger.info(f"Received YouTube notification: channel={channel_id}, video_id={video_id}, title={title}")
+
+		# Safety check: skip if no video ID
+		if not video_id:
+			main.logger.warning("No video ID found in entry. Skipping.")
+			continue
+
+		# Lookup channel
 		internal_channel_id = sql.get_id_for_channel_url(channel_id)
 		if internal_channel_id is None:
 			main.logger.error(f"Channel ID {channel_id} not found in database.")
-			return {"status": "error"}
+			continue
 
-		# check if post was already notified/processed
+		# Prevent duplicate notifications
 		if sql.check_post_match(internal_channel_id, video_id):
-			main.logger.info(f"Video {video_id} already notified, skipping...\n")
-			return {"status": "ignored"}
+			main.logger.info(f"Video {video_id} already notified, skipping.")
+			continue
  
 		# save the post to database and notify discord bot
 		try:
@@ -72,7 +100,7 @@ async def youtube_webhook(request: Request):
 			)
 		except Exception as e:
 			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
-			return {"status": "error"}
+			continue
 		# Get all discord channels subscribed to the YouTube channel, then notify each
 		notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
 		for discord_channel in notify_list:
@@ -84,8 +112,6 @@ async def youtube_webhook(request: Request):
 				video_id=video_id,
 				post_text=None				#todo: add if community postt
 			)
-
-	# notify discord bot about video...
 
 	return {"status": "ok"}
 
