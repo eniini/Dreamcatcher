@@ -214,43 +214,49 @@ async def share_bluesky_posts() -> None:
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
 	while True:
 		try:
-			# for each social media channel marked as Bluesky, fetch posts and share them
-			channels = sql.get_all_social_media_subscriptions_for_platform("Bluesky")
-
+			# Fetch posts from Bluesky
 			posts = await fetch_bluesky_posts()
-			posts.reverse()  # Reverse the order of posts to get the most recent first
-			# Allow time for API response
-			await asyncio.sleep(5)
-			if posts:
-				# check the the most recent post and compare that against the stored post in the database
-				# if the post matches, break and wait for the next fetch
-				post_uri = posts[0]['uri']
-				if bluesky_post_already_notified(post_uri):
-					main.logger.info(f"Latest post already notified, skipping...\n")
-					continue
-				# Loop through the posts and send notifications
-				for post in posts:
-					#logger.info(f"Post: {post['text']}\n")
-					post_uri = post['uri']
-					content = replace_urls(post['text'], post['links'])
-					images = post['post_images']
-					links = post['links']
-					# skip if already sent
-					if (bluesky_post_already_notified(post_uri)):
-						break
-					# Send notification to all whitelisted Discord channels
-					internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
-					if internal_channel_id is None:
-						main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when sharing post.\n")
-						continue
-					notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
-					for discord_channel in notify_list:
-						main.logger.info(f"Debugging: Sending Bluesky post {post_uri} to Discord channel {discord_channel})\n")
-						# await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
-					# Save the post URI and content to the database
-					bluesky_save_post_to_db(post_uri, content)
-		except Exception as e:
-			main.logger.info(f"Error sharing Bluesky posts: {e}\n")
+			if not posts:
+				main.logger.info(f"No posts fetched, retrying after delay...\n")
+				await asyncio.sleep(postFetchTimer)
+				continue
 
-		# Wait for 10 seconds before checking again
+			# Get the latest stored post ID from the database
+			internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
+			if internal_channel_id is None:
+				main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found.\n")
+				await asyncio.sleep(postFetchTimer)
+				continue
+
+			last_post_id = sql.get_latest_post_id(internal_channel_id)
+			main.logger.info(f"Latest stored post ID: {last_post_id}\n")
+
+			# Filter posts to include only those more recent than the stored post
+			new_posts = []
+			for post in posts:
+				if post['uri'] == last_post_id:
+					break
+				new_posts.append(post)
+
+			# Post new posts to Discord in reverse order (oldest first)
+			for post in reversed(new_posts):
+				post_uri = post['uri']
+				content = replace_urls(post['text'], post['links'])
+				images = post['post_images']
+				links = post['links']
+
+				notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
+				for discord_channel in notify_list:
+					main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
+					await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
+
+			# Update the database with the most recent post ID (first in the new_posts list)
+			if new_posts:
+				most_recent_post = new_posts[0]  # The first post in new_posts is the most recent
+				sql.update_latest_post(internal_channel_id, most_recent_post['uri'], most_recent_post['text'])
+
+		except Exception as e:
+			main.logger.error(f"Error in Bluesky post sharing task: {e}\n")
+
+		# Wait before fetching new posts
 		await asyncio.sleep(postFetchTimer)

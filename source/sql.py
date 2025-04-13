@@ -410,6 +410,30 @@ def update_latest_post(social_media_channel_id, post_id, content, timestamp=None
 	finally:
 		conn.close()
 
+def get_latest_post_id(social_media_channel_id):
+	"""
+	Returns the post_id of the latest post for a given social media channel.
+	If no post exists, returns None.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return None
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT post_id FROM LatestPosts
+			WHERE social_media_channel_id = ?
+		''', (social_media_channel_id,))
+		row = cursor.fetchone()
+		if row is None:
+			return None
+		return row['post_id']
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting latest post: {e}")
+		return None
+	finally:
+		conn.close()
+
 def check_post_match(social_media_channel_id, post_id):
 	"""
 	Compare latest post by given channel to the one saved into database. If the post_id is the same as stored one,
@@ -429,6 +453,7 @@ def check_post_match(social_media_channel_id, post_id):
 		if row is None:
 			return False
 		# return True if stored post is the same as given
+		main.logger.info(f"Checking if post {post_id} matches stored post {row['post_id']}...\n")
 		return row['post_id'] == post_id
 	except sqlite3.Error as e:
 		main.logger.error(f"Error checking post match: {e}")
