@@ -14,10 +14,12 @@ postFetchTimer = 10 # time in seconds to wait before fetching new posts.
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
 URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
 
+
+
 async def initialize_bluesky_client() -> None:
 	global client
 	global extractor
-	
+
 	try:
 		# Initialize Bluesky API client
 		client = Client()
@@ -229,7 +231,6 @@ async def share_bluesky_posts() -> None:
 				continue
 
 			last_post_id = sql.get_latest_post_id(internal_channel_id)
-			main.logger.info(f"Latest stored post ID: {last_post_id}\n")
 
 			# Filter posts to include only those more recent than the stored post
 			new_posts = []

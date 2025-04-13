@@ -29,9 +29,17 @@ TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
 
 PUBLIC_WEBHOOK_IP = os.getenv("PUBLIC_WEBHOOK_IP")
 
+class HTTPLogFilter(logging.Filter):
+	def filter(self, record):
+		# skip logs that are simply 200 OK
+		if '200 OK' in record.getMessage():
+			return False
+		return True
+
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO) # change this too warning for production!
 logger = logging.getLogger(__name__)
+logger.addFilter(HTTPLogFilter())  # Add the filter to the logger
 
 # Set to store notified streams to avoid duplicate notifications
 notified_streams = set()

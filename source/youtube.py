@@ -17,9 +17,9 @@ public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
 
 @web.fastAPIapp.get("/youtube-webhook")
 async def verify_youtube_webhook(
-		hub_mode: str = Query(None),
-		hub_challenge: str = Query(None),
-		hub_topic: str = Query(None)
+		hub_mode: str = Query(None, alias="hub.mode"),
+		hub_challenge: str = Query(None, alias="hub.challenge"),
+		hub_topic: str = Query(None, alias="hub.topic"),
 	):
 	"""
 	Handles YouTube Web Sub (PubSubHubbub) verification challenge.
@@ -27,7 +27,7 @@ async def verify_youtube_webhook(
 	main.logger.info(f"Received YouTube Web Sub verification request: {hub_mode}, {hub_challenge}, {hub_topic}\n")
 	if hub_mode == "subscribe" and hub_challenge:
 		return {"hub.challenge": hub_challenge} # Return the challenge to verify the subscription
-	return "Invalid request"
+	return "Invalid request", 400
 
 @web.fastAPIapp.post("/youtube-webhook")
 async def youtube_webhook(request: Request):
