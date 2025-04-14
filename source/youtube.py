@@ -1,7 +1,7 @@
 import requests
-from datetime import datetime
+import datetime
 import xml.etree.ElementTree as ET
-from fastapi import Request, Query
+from fastapi import Request, Query, Response
 
 import main
 import bot
@@ -26,8 +26,8 @@ async def verify_youtube_webhook(
 	"""
 	main.logger.info(f"Received YouTube Web Sub verification request: {hub_mode}, {hub_challenge}, {hub_topic}\n")
 	if hub_mode == "subscribe" and hub_challenge:
-		return {"hub.challenge": hub_challenge} # Return the challenge to verify the subscription
-	return "Invalid request", 400
+		return Response(content=hub_challenge, media_type="test/plain") # Return the challenge to verify the subscription
+	return Response(content="Invalid request", status_code=400)
 
 YOUTUBE_NS = {
 	"atom": "http://www.w3.org/2005/Atom",
@@ -40,6 +40,7 @@ async def youtube_webhook(request: Request):
 	Receives YouTube Web Sub notifications when a new video is posted.
 	"""
 	data = await request.body()
+	main.logger.info(f"📦 Webhook received POST:\n{data.decode()}")
 	# parse received XMl data
 	try:
 		root = ET.fromstring(data)
@@ -96,7 +97,7 @@ async def youtube_webhook(request: Request):
 				internal_channel_id,
 				video_id,
 				video_url,
-				datetime.now(datetime.timezone.utc).isoformat()
+				datetime.datetime.now(datetime.timezone.utc).isoformat()
 			)
 		except Exception as e:
 			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
