@@ -5,7 +5,6 @@ from discord.ext import commands
 import main
 import blsky
 import youtube
-import sql
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -13,8 +12,9 @@ intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# track the bluesky task so we can cancel it
+# track the bluesky/youtube task so we can cancel it
 bluesky_task = None
+youtube_task = None
 
 #
 #	Discord bot helper & debug functions
@@ -55,6 +55,7 @@ async def load_cogs() -> None:
 @bot.event
 async def on_ready() -> None:
 	global bluesky_task
+	global youtube_task
 	# Connect to home (debug) server and channel
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
@@ -75,6 +76,9 @@ async def on_ready() -> None:
 		if bluesky_task is None or bluesky_task.done():
 			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
 			#bluesky_task = bot.loop.create_task(blsky.share_bluesky_posts())
+		
+		if youtube_task is None or youtube_task.done():
+			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
@@ -82,16 +86,27 @@ async def on_ready() -> None:
 @bot.event
 async def on_resumed():
 	global bluesky_task
+	global youtube_task
+
 	if bluesky_task is None or bluesky_task.done():
 		try:
 			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
-			await bot_internal_message(f"Bot resumed, spinning bluesky task back up again...\n")
+			#await bot_internal_message(f"Bot resumed, spinning bluesky task back up again...\n")
 		except Exception as e:
 			main.logger.error(f"Error resuming Bluesky task by Discord bot: {e}\n")
+
+	if youtube_task is None or youtube_task.done():
+		try:
+			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
+			#await bot_internal_message(f"Bot resumed, spinning youtube task back up again...\n")
+		except Exception as e:
+			main.logger.error(f"Error resuming Youtube task by Discord bot: {e}\n")
+
 
 @bot.event
 async def on_disconnect():
 	global bluesky_task
+	global youtube_task
 	main.logger.info(f"Bot is disconnecting... cleaning up tasks.\n")
 
 	# cancel Bluesky task if its running
@@ -101,10 +116,18 @@ async def on_disconnect():
 			await bluesky_task
 		except asyncio.CancelledError:
 			main.logger.error("Bluesky task cancelled.\n")
+	
+	if youtube_task and not youtube_task.done():
+		youtube_task.cancel()
+		try:
+			await youtube_task
+		except asyncio.CancelledError:
+			main.logger.error("Youtube task cancelled.\n")
 
 @bot.event
 async def on_shutdown():
 	global bluesky_task
+	global youtube_task
 	main.logger.info(f"Bot shutdown requested, cleaning up resources...\n")
 
 	# cancel Bluesky task if its running
@@ -115,6 +138,13 @@ async def on_shutdown():
 		except asyncio.CancelledError:
 			main.logger.error("Bluesky task cancelled.\n")
 	
+	if youtube_task and not youtube_task.done():
+		youtube_task.cancel()
+		try:
+			await youtube_task
+		except asyncio.CancelledError:
+			main.logger.error("Youtube task cancelled.\n")
+
 	await bot.close()
 
 #

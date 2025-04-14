@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord import app_commands
 
 import main
-import youtube
 import sql
 
 class Notifications(commands.Cog):
@@ -49,15 +48,8 @@ class Notifications(commands.Cog):
 								main.logger.error(f"Error adding subscription to database: {e}\n")
 								await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 									ephemeral=True)
-					# YT channel is new, call YT webhook subscription...
+					# YT channel is not in database yet, add it.
 					else:
-
-						# TODO: Need dedicated way to track YT subscriptions!!!
-
-						status_code = youtube.subscribe_to_channel(youtube_channel_id, youtube.public_webhook_address)
-						# if status_code is not 404, 502 etc.., save activated YouTube subscription to SQL Database.
-						# else log an error for YT webhook failure.
-						# otherwise...
 						internal_id = sql.add_social_media_channel("YouTube", youtube_channel_id, None)
 						try:
 							sql.add_subscription(targetChannel.id, internal_id)

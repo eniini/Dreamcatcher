@@ -306,7 +306,7 @@ def get_id_for_channel_url(external_url):
 	finally:
 		conn.close()
 
-def get_discord_channels_for_social_channel(social_media_channel_id):
+def get_discord_channels_for_social_channel(social_media_channel_id: int):
 	"""
 	Return a list of Discord channels subscribed to a given social media channel.
 	"""
@@ -382,7 +382,7 @@ def get_all_social_media_subscriptions_for_platform(platform):
 # Latest Post Management Functions
 #
 
-def update_latest_post(social_media_channel_id, post_id, content, timestamp=None):
+def update_latest_post(social_media_channel_id: int, post_id: str, content: str, timestamp=None):
 	"""
 	Insert or update the LatestPosts record for a given social media channel.
 	This function overwrites the previous latest post with the new data whenever a webhook is updated.
@@ -410,7 +410,7 @@ def update_latest_post(social_media_channel_id, post_id, content, timestamp=None
 	finally:
 		conn.close()
 
-def get_latest_post_id(social_media_channel_id):
+def get_latest_post_id(social_media_channel_id: int):
 	"""
 	Returns the post_id of the latest post for a given social media channel.
 	If no post exists, returns None.
@@ -434,7 +434,7 @@ def get_latest_post_id(social_media_channel_id):
 	finally:
 		conn.close()
 
-def check_post_match(social_media_channel_id, post_id):
+def check_post_match(social_media_channel_id: int, post_id: str):
 	"""
 	Compare latest post by given channel to the one saved into database. If the post_id is the same as stored one,
 	Return true. Otherwise return false, indicating that the post is new.

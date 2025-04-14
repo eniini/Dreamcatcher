@@ -9,6 +9,7 @@ import bot
 import blsky
 import web
 import sql
+import youtube
 
 load_dotenv()
 
@@ -50,6 +51,7 @@ async def main():
 		
 	# initialize APIs
 	await blsky.initialize_bluesky_client()
+	await youtube.initialize_youtube_client()
 	
 	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
 	asyncio.create_task(web.run_web_server())

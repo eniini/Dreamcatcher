@@ -1,149 +1,162 @@
-import requests
+import asyncio
+import functools
 import datetime
-import xml.etree.ElementTree as ET
-from fastapi import Request, Query, Response
+from googleapiclient.discovery import build
 
 import main
 import bot
-import web
 import sql
 
-global public_webhook_address
-public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
+# To note: Youtube API has a quota limit of 10,000 units per day.
+# Activities.list() and PlaylistItems.list() both cost 1 unit per request.
+# So for every successful new post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual video/livestream url)
+# this means that optimal wait time for checking new posts varies highly based on:
+# - how many posts can be expected per day,
+# - how many channels are queried
+
+wait_time = 60  # default wait time between checks, in seconds
 
 #
-#	Webhook endpoints
+#	API initialization
 #
 
-@web.fastAPIapp.get("/youtube-webhook")
-async def verify_youtube_webhook(
-		hub_mode: str = Query(None, alias="hub.mode"),
-		hub_challenge: str = Query(None, alias="hub.challenge"),
-		hub_topic: str = Query(None, alias="hub.topic"),
-	):
-	"""
-	Handles YouTube Web Sub (PubSubHubbub) verification challenge.
-	"""
-	main.logger.info(f"Received YouTube Web Sub verification request: {hub_mode}, {hub_challenge}, {hub_topic}\n")
-	if hub_mode == "subscribe" and hub_challenge:
-		return Response(content=hub_challenge, media_type="test/plain") # Return the challenge to verify the subscription
-	return Response(content="Invalid request", status_code=400)
-
-YOUTUBE_NS = {
-	"atom": "http://www.w3.org/2005/Atom",
-	"yt": "http://www.youtube.com/xml/schemas/2015"
-}
-
-@web.fastAPIapp.post("/youtube-webhook")
-async def youtube_webhook(request: Request):
-	"""
-	Receives YouTube Web Sub notifications when a new video is posted.
-	"""
-	data = await request.body()
-	main.logger.info(f"📦 Webhook received POST:\n{data.decode()}")
-	# parse received XMl data
+async def initialize_youtube_client():
+	global youtubeClient
+	global public_webhook_address
 	try:
-		root = ET.fromstring(data)
-	except ET.ParseError as e:
-		main.logger.error(f"Error parsing XML data: {e}")
-		return {"status": "error", "detail": "Invalid XML data"}
+		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
+		public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
+		main.logger.info(f"Youtube API initialized successfully.\n")
+	except Exception as e:
+		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
+		raise
 
-	# check if the notification is for a new video
-	# TODO: could also handle activityId for other types of notifications
+def reconnect_api_with_backoff(max_retries=5, base_delay=2):
+	"""
+	Tries to re-establish given API connection with exponential falloff.
+	"""
+	def decorator(api_func):
+		@functools.wraps(api_func)
+		async def wrapper(*args, **kwargs):
+			attempt = 0
+			while attempt < max_retries:
+				try:
+					return await api_func(*args, **kwargs)
+				except Exception as e:
+					attempt += 1
+					main.logger.warning(f"Youtube API call failed! (attempt {attempt}/{max_retries}): {e}")
 
-	for entry in root.findall("atom:entry", YOUTUBE_NS):
-		# Video ID
-		video_id = entry.find("yt:videoId", YOUTUBE_NS)
-		video_id = video_id.text if video_id is not None else None
+					if "quotaExceeded" in str(e) or "403" in str(e):
+						main.logger.critical(f"Bot has exceeded Youtube API quota.")
+						await bot.bot_internal_message("Bot has exceeded Youtube API quota!")
+						return None
+					if attempt == max_retries:
+						main.logger.error(f"Max retries reached. Could not recover API connection.")
+						await bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
 
-		# Title
-		title = entry.find("atom:title", YOUTUBE_NS)
-		title = title.text if title is not None else "(No title)"
+					wait_time = base_delay * pow(2, attempt - 1)
+					main.logger.info(f"Reinitializing Youtube API client in {wait_time:.2f} seconds...")
 
-		# Channel ID
-		channel_id = entry.find("yt:channelId", YOUTUBE_NS)
-		channel_id = channel_id.text if channel_id is not None else "UnknownChannel"
+					await asyncio.sleep(wait_time)
+					# try to reconnect API
+					await initialize_youtube_client()
+		return wrapper
+	return decorator
 
-		# Video URL
-		video_url = None
-		for link in entry.findall("atom:link", YOUTUBE_NS):
-			if link.attrib.get("rel") == "alternate":
-				video_url = link.attrib.get("href")
-		if not video_url and video_id:
-			video_url = f"https://www.youtube.com/watch?v={video_id}"
+#
+#	Youtube API functions, video/livestream/post fetching
+#
 
-		# Logging for debug/testing
-		main.logger.info(f"Received YouTube notification: channel={channel_id}, video_id={video_id}, title={title}")
+@reconnect_api_with_backoff()
+async def get_latest_video_from_playlist(channel_id: str) -> str:
+	"""
+	Fetches the latest video ID from the channel's uploads playlist.
+	This is the least expensive way to check for new videos. (less Youtube API quota usage)
+	Must be called in order to get the actual video URL, as activities() only returns video ID.
+	"""
+	global youtubeClient
 
-		# Safety check: skip if no video ID
-		if not video_id:
-			main.logger.warning("No video ID found in entry. Skipping.")
-			continue
+	if not channel_id or not channel_id.startswith("UC"):
+		main.logger.error(f"Invalid channel ID: {channel_id}.\n")
+		return None
 
-		# Lookup channel
-		internal_channel_id = sql.get_id_for_channel_url(channel_id)
-		if internal_channel_id is None:
-			main.logger.error(f"Channel ID {channel_id} not found in database.")
-			continue
+	playlist_id = channel_id.replace("UC", "UU", 1)
 
-		# Prevent duplicate notifications
-		if sql.check_post_match(internal_channel_id, video_id):
-			main.logger.info(f"Video {video_id} already notified, skipping.")
-			continue
- 
-		# save the post to database and notify discord bot
+	try:
+		request = youtubeClient.playlistItems().list(
+			part="contentDetails",
+			playlistId=playlist_id,
+			maxResults=1
+		)
+		response = request.execute()
+		if response["items"]:
+			return response["items"][0]["contentDetails"]["videoId"]
+	except Exception as e:
+		main.logger.error(f"Error fetching latest video from playlist: {e}")
+	return None
+
+@reconnect_api_with_backoff()
+async def check_for_youtube_activities() -> None:
+	global youtubeClient
+
+	main.logger.info(f"Starting the Youtube activity sharing task...\n")
+	while True:
 		try:
-			sql.update_latest_post(
-				internal_channel_id,
-				video_id,
-				video_url,
-				datetime.datetime.now(datetime.timezone.utc).isoformat()
-			)
+			# Fetch all YouTube subscriptions from the database
+			youtube_subscriptions = sql.get_all_social_media_subscriptions_for_platform("YouTube")
+			main.logger.info(f"Found following YouTube subscriptions: {youtube_subscriptions}\n")
+			for channel_id in youtube_subscriptions:
+				internal_id = sql.get_id_for_channel_url(channel_id)
+				try:
+					main.logger.info(f"Checking for new activities for channel {channel_id} [{internal_id}]...\n")
+					# Fetch the YouTube channel's activities
+					request = youtubeClient.activities().list(
+						part='snippet',
+						channelId=channel_id,
+						maxResults=1
+					)
+					response = request.execute()
+					for item in response.get('items', []):
+						activity_id = item['id']
+						activity_type = item['snippet']['type']
+						title = item['snippet']['title']
+						published_at = item['snippet']['publishedAt']
+						post_text = item['snippet'].get('description', None)
+
+						# Check if the activity is already notified
+						if sql.check_post_match(channel_id, activity_id):
+							main.logger.info(f"Activity {activity_id} already notified, skipping...\n")
+							continue
+
+						# Handle uploads (fetch video ID if necessary)
+						video_id = None
+						if activity_type == "upload":
+							video_id = await get_latest_video_from_playlist(channel_id)
+							if video_id is None:
+								main.logger.error(f"Failed to fetch video ID for activity {activity_id} from playlist!\n")
+								continue
+
+						# Save the activity to the database
+						sql.update_latest_post(internal_id, activity_id, title)
+						main.logger.info(f"New activity found for channel {channel_id} [{internal_id}]: {activity_type} - {title} ({published_at})\n")
+
+						# Notify Discord channels subscribed to this YouTube channel
+						discord_channels = sql.get_discord_channels_for_social_channel(internal_id)
+
+						for discord_channel in discord_channels:
+							main.logger.info(f"Notifying Discord channel {discord_channel} about new activity...\n")
+							await bot.notify_youtube_activity(
+								discord_channel,
+								activity_type,
+								title,
+								published_at,
+								video_id,
+								post_text)
+
+				except Exception as e:
+					main.logger.error(f"Error processing activities for channel {channel_id}: {e}\n")
 		except Exception as e:
-			main.logger.error(f"Error updating latest YouTube ({channel_id}) post into database: {e}")
-			continue
-		# Get all discord channels subscribed to the YouTube channel, then notify each
-		notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
-		for discord_channel in notify_list:
-			await bot.notify_youtube_activity(
-				target_channel=discord_channel,
-				activity_type="upload",		#todo: tag for correct content type (upload, livestream, post)
-				title=title,
-				published_at="now",			#todo: get utc timestamp
-				video_id=video_id,
-				post_text=None				#todo: add if community postt
-			)
+			main.logger.error(f"Error fetching YouTube subscriptions or processing activities: {e}\n")
 
-	return {"status": "ok"}
-
-#
-#	POST request for Youtube Web Sub Hub
-#
-
-def subscribe_to_channel(channel_id: str, callback_url) -> tuple[int, str]:
-	"""
-	Subscribe to a Youtube channel's new video notifications.
-	"""
-	url = "https://pubsubhubbub.appspot.com/subscribe"
-	data = {
-		"hub.callback": callback_url,
-		"hub.mode": "subscribe",
-		"hub.topic": f"https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}",
-		"hub.verify": "async"
-	}
-	response = requests.post(url, data=data)
-	return response.status_code, response.text
-
-def unsubscribe_from_channel(channel_id: str, callback_url) -> tuple[int, str]:
-	"""
-	Unsubscribe from a Youtube channel's new video notifications.
-	"""
-	url = "https://pubsubhubbub.appspot.com/subscribe"
-	data = {
-		"hub.callback": callback_url,
-		"hub.mode": "unsubscribe",
-		"hub.topic": f"https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}",
-		"hub.verify": "async"
-	}
-	response = requests.post(url, data=data)
-	return response.status_code, response.text
+		# Wait for the configured interval before checking again
+		await asyncio.sleep(wait_time)
