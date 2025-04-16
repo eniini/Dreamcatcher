@@ -75,7 +75,7 @@ def init_db():
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			platform TEXT NOT NULL,
 			external_url TEXT NOT NULL,
-			webhook_id TEXT,
+			channel_name TEXT,
 			last_post_timestamp TEXT
 		)
 	''')
@@ -155,7 +155,7 @@ def remove_discord_channel(discord_channel_Id):
 #	Social media channel management
 #
 
-def add_social_media_channel(platform, external_url, webhook_id):
+def add_social_media_channel(platform, external_url, channel_name):
 	"""
 	Add a new discord channel, returns an unique id.
 	"""
@@ -165,9 +165,9 @@ def add_social_media_channel(platform, external_url, webhook_id):
 	try:
 		cursor = conn.cursor()
 		cursor.execute('''
-			INSERT INTO SocialMediaChannels (platform, external_url, webhook_id)
+			INSERT INTO SocialMediaChannels (platform, external_url, channel_name)
 			VALUES (?, ?, ?)
-		''', (platform, external_url, webhook_id))
+		''', (platform, external_url, channel_name))
 		id = cursor.lastrowid
 		conn.commit()
 		return id
@@ -285,9 +285,30 @@ def get_channel_url(channel_id):
 	finally:
 		conn.close()
 
+def get_channel_name(channel_id):
+	"""
+	Find the matching id in SocialMediaChannels table and return the saved channel_name
+	"""
+	conn = get_connection()
+	if conn is None:
+		return None
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT channel_name FROM SocialMediaChannels
+			WHERE id = ?
+		''', (channel_id,))
+		row = cursor.fetchone()
+		return row['channel_name'] if row else None
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting channel name: {e}")
+		return None
+	finally:
+		conn.close()
+
 def get_id_for_channel_url(external_url):
 	"""
-	Get the matching database id for given external url if it exists.
+	Get the matching Subscription id for given socialMediaChannel url if a subscription for it exists.
 	"""
 	conn = get_connection()
 	if conn is None:
@@ -328,22 +349,33 @@ def get_discord_channels_for_social_channel(social_media_channel_id: int):
 	finally:
 		conn.close()
 
-def list_social_media_subscriptions_for_discord_channel(discord_channel_id):
+def list_social_media_subscriptions_for_discord_channel(discord_channel_id, target_platform=None):
 	"""
 	List all social media subscriptions for a specific Discord channel.
 	Returns a list of internal IDs of social media channels subscribed to the given Discord channel.
+	If target_platform is provided, filter results by the given platform.
 	"""
 	conn = get_connection()
 	if conn is None:
 		return []
 	try:
 		cursor = conn.cursor()
-		cursor.execute('''
-			SELECT DISTINCT s.id
-			FROM SocialMediaChannels s
-			JOIN Subscriptions sub ON s.id = sub.social_media_channel_id
-			WHERE sub.discord_channel_id = ?
-		''', (discord_channel_id,))
+		
+		if target_platform:
+			cursor.execute('''
+				SELECT DISTINCT s.id
+				FROM SocialMediaChannels s
+				JOIN Subscriptions sub ON s.id = sub.social_media_channel_id
+				WHERE sub.discord_channel_id = ? AND s.platform = ?
+			''', (discord_channel_id, target_platform))
+		else:
+			cursor.execute('''
+				SELECT DISTINCT s.id
+				FROM SocialMediaChannels s
+				JOIN Subscriptions sub ON s.id = sub.social_media_channel_id
+				WHERE sub.discord_channel_id = ?
+			''', (discord_channel_id,))
+
 		rows = cursor.fetchall()
 		return [row['id'] for row in rows]
 	except sqlite3.Error as e:
@@ -453,7 +485,6 @@ def check_post_match(social_media_channel_id: int, post_id: str):
 		if row is None:
 			return False
 		# return True if stored post is the same as given
-		main.logger.info(f"Checking if post {post_id} matches stored post {row['post_id']}...\n")
 		return row['post_id'] == post_id
 	except sqlite3.Error as e:
 		main.logger.error(f"Error checking post match: {e}")

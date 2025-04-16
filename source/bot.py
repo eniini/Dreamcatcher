@@ -151,28 +151,27 @@ async def on_shutdown():
 #	Discord bot notification functions
 #
 
-async def notify_youtube_activity(target_channel: str, activity_type: str, title: str, published_at: str, video_id: str, post_text: str) -> None:
+async def notify_youtube_activity(target_channel: str, activity_type: str, channel_name: str, video_id: str) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		try:
+			video_url = f"https://www.youtube.com/watch?v={video_id}"
 			if activity_type == "upload":
-				video_url = f"https://www.youtube.com/watch?v={video_id}"
 				await channel.send(
-					f"**Nimi just uploaded a new video!** 💭\n"
+					f"**{channel_name} just uploaded a new video!** 💭\n"
 					f"{video_url}"
 				)
 			elif activity_type == "liveStreamSchedule":
-				video_url = f"https://www.youtube.com/watch?v={video_id}"
 				await channel.send(
-					f"📢 **Nimi just scheduled a new stream!** 💭\n"
+					f"**{channel_name} just scheduled a new stream!** 🔔\n"
 					f"{video_url}"
 				)
-			elif activity_type == "post":
+			elif activity_type == "liveStreamNow":
+				
 				await channel.send(
-					f"📝 **Nimi just posted a new community message!** 💬\n" \
-					f"_{post_text}_\n" \
-					f"🔗 Check it out: https://www.youtube.com/channel/{main.TARGET_YOUTUBE_ID}/community"
-				)
+					f"**{channel_name} is now live!** 🔴\n"
+					f"{video_url}"
+				)	
 		except Exception as e:
 			main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
 	else:
