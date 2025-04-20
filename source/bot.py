@@ -5,6 +5,7 @@ from discord.ext import commands
 import main
 import blsky
 import youtube
+import sql
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -154,22 +155,27 @@ async def on_shutdown():
 async def notify_youtube_activity(target_channel: str, activity_type: str, channel_name: str, video_id: str) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
+		# Use channel.id instead of channel.guild.id
+		notify_role = sql.get_notification_role(channel.id)
+		ping_role = ""
+		if notify_role:
+			main.logger.info(f"Notification role found: {notify_role}\n")
+			ping_role = f"<@&{notify_role}> "
 		try:
 			video_url = f"https://www.youtube.com/watch?v={video_id}"
 			if activity_type == "upload":
 				await channel.send(
-					f"**{channel_name} just uploaded a new video!** 💭\n"
+					f"{ping_role}**{channel_name} just uploaded a new video!** 💭\n"
 					f"{video_url}"
 				)
 			elif activity_type == "liveStreamSchedule":
 				await channel.send(
-					f"**{channel_name} just scheduled a new stream!** 🔔\n"
+					f"{ping_role}**{channel_name} just scheduled a new stream!** 🔔\n"
 					f"{video_url}"
 				)
 			elif activity_type == "liveStreamNow":
-				
 				await channel.send(
-					f"**{channel_name} is now live!** 🔴\n"
+					f"{ping_role}**{channel_name} is now live!** 🔴\n"
 					f"{video_url}"
 				)	
 		except Exception as e:
@@ -181,6 +187,10 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 	channel = await bot.fetch_channel(int(target_channel))
 	# check if the bot has permission to send messages in the channel
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
+		notify_role = sql.get_notification_role(channel.id)
+		ping_role = ""
+		if notify_role:
+			ping_role = f"<@&{notify_role}> "
 		try:
 			# Create embed for better formatting
 			post_url = blsky.convert_bluesky_uri_to_url(post_uri)
@@ -205,6 +215,7 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 				)
 			# Send the actual embed image
 			await channel.send(
+				content=f"{ping_role}",
 				embed=embed
 			)
 			# If multiple images exist, send them separately, ignoring the first one

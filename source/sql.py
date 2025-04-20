@@ -65,7 +65,8 @@ def init_db():
 	cursor.execute('''
 		CREATE TABLE IF NOT EXISTS DiscordChannels (
 			channel_id TEXT PRIMARY KEY,
-			channel_name TEXT
+			channel_name TEXT,
+			notification_role TEXT
 		)
 	''')
 
@@ -151,6 +152,47 @@ def remove_discord_channel(discord_channel_Id):
 	finally:
 		conn.close()
 
+
+def add_notification_role(discord_channel_id, notification_role):
+	"""
+	Add a notification role to a discord channel.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			UPDATE DiscordChannels SET notification_role = ?
+			WHERE channel_id = ?
+		''', (notification_role, discord_channel_id))
+		conn.commit()
+	except sqlite3.Error as e:
+		main.logger.error(f"Error adding notification role: {e}")
+	finally:
+		conn.close()
+
+def get_notification_role(discord_channel_id):
+	"""
+	Get the notification role for a discord channel.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return None
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT notification_role FROM DiscordChannels
+			WHERE channel_id = ?
+		''', (discord_channel_id,))
+		row = cursor.fetchone()
+		return row['notification_role'] if row else None
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting notification role: {e}")
+		return None
+	finally:
+		conn.close()
+
 #
 #	Social media channel management
 #
@@ -190,6 +232,26 @@ def remove_social_media_channel(row_id):
 		conn.commit()
 	except sqlite3.Error as e:
 		main.logger.error(f"Error removing social media channel: {e}")
+	finally:
+		conn.close()
+
+#
+# Latest Posts management
+#
+
+def remove_latest_post(social_media_channel_id):
+	"""
+	Remove the latest post for a given social media channel.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return
+	try:
+		cursor = conn.cursor()
+		cursor.execute('DELETE FROM LatestPosts WHERE social_media_channel_id = ?', (social_media_channel_id,))
+		conn.commit()
+	except sqlite3.Error as e:
+		main.logger.error(f"Error removing latest post: {e}")
 	finally:
 		conn.close()
 

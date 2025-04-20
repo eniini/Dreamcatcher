@@ -214,7 +214,7 @@ async def check_for_youtube_activities() -> None:
 						# Check if the activity is already notified (factoring in the state of the livestream)
 						virtual_id = activity_id + phase_suffix
 						if sql.check_post_match(internal_id, virtual_id):
-							main.logger.info(f"Activity {activity_id} already notified for channel {channel_name}.\n")
+							#main.logger.info(f"Activity {activity_id} already notified for channel {channel_name}.\n")
 							continue
 
 						# Save the activity to the database

@@ -128,6 +128,13 @@ class Notifications(commands.Cog):
 				else:
 					await interaction.response.send_message(f"No YouTube channel subscriptions found for {targetChannel.name}.",
 						ephemeral=True)
+
+			if sql.get_discord_channels_for_social_channel(internal_social_media_channel) is None:
+				# If no Discord channels are subscribed to the social media channel, remove it from the database
+				sql.remove_social_media_channel(internal_social_media_channel)
+				sql.remove_latest_post(internal_social_media_channel)
+				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
+
 		except Exception as e:
 			main.logger.error(f"Error unsubscribing Discord channel from YouTube notifications: {e}\n")
 
@@ -146,6 +153,8 @@ class Notifications(commands.Cog):
 			else:
 				targetChannel = channel
 
+			notification_role = sql.get_notification_role(targetChannel.id)
+
 			subscriptions = sql.list_social_media_subscriptions_for_discord_channel(targetChannel.id)
 			if subscriptions is not None:
 				output = ""
@@ -153,14 +162,52 @@ class Notifications(commands.Cog):
 					channel_name = sql.get_channel_name(channel_id)
 					# add each channel_id, join them into a string delimited by a line break
 					output += f"{channel_name}\n"
-				await interaction.response.send_message(f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications from the following channels:\n{output}",
-					ephemeral=True)
+				
+				message = f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications from the following channels:\n{output}"
+				if notification_role is not None:
+					role = interaction.guild.get_role(int(notification_role))
+					if role is not None:
+						# Check if the bot has permission to mention roles
+						if interaction.guild.me.guild_permissions.mention_everyone:
+							main.logger.info(f"notification role found... {notification_role}\n")
+							message += f"\nDreamcatcher will ping {role.mention} on new activity."
+						else:
+							main.logger.warning(f"Bot lacks permission to mention roles in guild {interaction.guild.name}.\n")
+							message += f"\nDreamcatcher cannot mention the notification role due to insufficient permissions."
+					else:
+						main.logger.warning(f"Invalid or missing role for ID {notification_role} in guild {interaction.guild.name}.\n")
+						message += f"\nDreamcatcher could not find the notification role. Please update it using the appropriate command."
+				await interaction.response.send_message(message, ephemeral=True)
 			else:
 				await interaction.response.send_message(f"{targetChannel.name} is not subscribed to any channels.",
 					ephemeral=True)
 
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error checking discord channel status: {e}\n")
+
+
+#
+#	Discord channel notification functions
+#
+	@app_commands.command(name="update_notification_role", description="Add or update the role that will be pinged when a new notification is sent.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	async def add_notification_role(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel=None):
+		try:
+			# if no given channel, defaults to the context
+			if channel is None:
+				targetChannel = interaction.channel
+			else:
+				targetChannel = channel
+
+			sql.add_notification_role(targetChannel.id, role.id)
+			await interaction.response.send_message(f"Notification role for channel {targetChannel.name} updated to {role.name}.",
+				ephemeral=True)
+			main.logger.info(f"[BOT.COMMAND] Notification role updated to {role.name}...\n")
+
+		except Exception as e:
+			main.logger.error(f"[BOT.COMMAND.ERROR] Error updating notification role: {e}\n")
+
 
 #
 #	SETUP
