@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link rel="hub" href="https://pubsubhubbub.appspot.com/"/>
+  <link rel="self" href="https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCIfAvpeIWGHb0duCkMkmm2Q"/>
+  <entry>
+    <id>yt:video:1pOQjq6wPNM</id>
+    <yt:videoId xmlns:yt="http://www.youtube.com/xml/schemas/2015">1pOQjq6wPNM</yt:videoId>
+    <yt:channelId xmlns:yt="http://www.youtube.com/xml/schemas/2015">UCIfAvpeIWGHb0duCkMkmm2Q</yt:channelId>
+    <title>Test Video</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=1pOQjq6wPNM"/>
+    <published>2025-03-28T12:00:00+00:00</published>
+    <updated>2025-03-28T12:00:00+00:00</updated>
+  </entry>
+</feed>

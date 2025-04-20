@@ -1,13 +1,15 @@
 import os
 import sqlite3
 import logging
-import re
 import asyncio
+import signal 
 from dotenv import load_dotenv
 
 import bot
-import youtube
 import blsky
+import web
+import sql
+import youtube
 
 load_dotenv()
 
@@ -26,98 +28,56 @@ TARGET_YOUTUBE_ID	= os.getenv("TARGET_CHANNEL_ID")
 TARGET_PLAYLIST_ID	= os.getenv("TARGET_PLAYLIST_ID")
 TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
 
+PUBLIC_WEBHOOK_IP = os.getenv("PUBLIC_WEBHOOK_IP")
 
 # Setup logging for the main process
-logging.basicConfig(level=logging.INFO) # change this too warning for production!
+logging.basicConfig(level=logging.INFO)  # Change this to WARNING for production!
 logger = logging.getLogger(__name__)
+
+# Suppress httpx INFO logs
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(logging.WARNING)
 
 # Set to store notified streams to avoid duplicate notifications
 notified_streams = set()
 
-# ------------------- DATABASE OPERATIONS -------------------
-# Initialize SQLite databases
-def init_db():
-	conn = sqlite3.connect('whitelist_channels.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS whitelist_channels
-		   (channel_id TEXT PRIMARY KEY)""")
-	conn.commit()
-	conn.close()
-
-	conn = sqlite3.connect('bluesky_posts.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS bluesky_posts
-			(id INTEGER PRIMARY KEY AUTOINCREMENT,
-			uri TEXT UNIQUE,  -- Stores post URI
-			content TEXT,      -- Stores post text
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-	conn.commit()
-	conn.close()
-
-	conn = sqlite3.connect('youtube_posts.db')
-	c = conn.cursor()
-	c.execute("""CREATE TABLE IF NOT EXISTS youtube_posts
-			(id INTEGER PRIMARY KEY AUTOINCREMENT,
-			activity_id TEXT UNIQUE,  -- Stores activity ID
-			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-	conn.commit()
-	conn.close()
-
-def add_channel_to_whitelist(channel_id: str):
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("INSERT OR IGNORE INTO whitelist_channels (channel_id) VALUES (?)", (channel_id,))
-		conn.commit()
-		conn.close()
-	except Exception as e:
-		logger.error(f"Error adding channel to whitelist: {e}\n")
-
-def remove_channel_from_whitelist(channel_id: str) -> bool:
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("DELETE FROM whitelist_channels WHERE channel_id = ?", (channel_id,))
-		if c.rowcount == 0:
-			# no matching item found
-			conn.close()
-			return False
-		conn.commit()
-		conn.close()
-		return True
-	except Exception as e:
-		logger.error(f"Error removing channel from whitelist: {e}\n")
-		return False
-
-def get_whitelisted_channels() -> list[str]:
-	try:
-		conn = sqlite3.connect('whitelist_channels.db')
-		c = conn.cursor()
-		c.execute("SELECT channel_id FROM whitelist_channels")
-		channels = [row[0] for row in c.fetchall()]
-		conn.close()
-		return channels
-	except Exception as e:
-		logger.error(f"Error fetching whitelisted channels: {e}\n")
-		return []
-
-
 async def main():
 	try:
 		# Initialize the SQLite database
-		init_db()
-		await youtube.initialize_youtube_client()
-		await blsky.initialize_bluesky_client()
-		await bot.bot.start(DISCORD_BOT_TOKEN)
-	except asyncio.CancelledError:
-		logger.info("Bot shutdown requested, exiting...\n")
+		sql.init_db()
+	except Exception as e:
+		logger.error(f"Error initializing content subscription database: {e}")
+		return
+		
+	# initialize APIs
+	await blsky.initialize_bluesky_client()
+	await youtube.initialize_youtube_client()
+	
+	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
+	asyncio.create_task(web.run_web_server())
+
+	# Create an event to signal shutdown
+	shutdown_event = asyncio.Event()
+
+	# Define a signal handler to set the shutdown event
+	def handle_signal():
+		logger.info("Received shutdown signal, stopping...")
+		shutdown_event.set()
+
+	# Add signal handlers
+	for sig in (signal.SIGINT, signal.SIGTERM):
+		signal.signal(sig, lambda s, f: handle_signal())
+
+	# Wait for the shutdown event
+	await shutdown_event.wait()
+
+	# Shutdown tasks
+	await bot.on_shutdown()
+	await web.close_web_server()
+
+def main_entry():
+	# Run the main function
+	asyncio.run(main())
 
 if __name__ == "__main__":
-	try:
-		asyncio.run(main())
-	except KeyboardInterrupt:
-		logger.info("Shutting down...\n")
-		exit(0)
-	except Exception as e:
-		logger.error(f"Error initializing the Discord bot: {e}\n")
-		exit(1)
+	main_entry()

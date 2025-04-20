@@ -1,19 +1,23 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from typing import Optional
 
 import main
+import sql
+import youtube
 
 class Notifications(commands.Cog):
 	def __init__(self, _bot):
 		self._bot = _bot
 
-
-
-	@app_commands.command(name="subscribe", description="Subscribe the current or given channel to receive upcoming stream notifications.")
+#
+# Webhook-based subscription
+#
+	@app_commands.command(name="subscribe_youtube_channel", description="Subscribe a discord channel to receive notifications from a YouTube channel.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
-	async def add_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
+	async def subscribe_youtube_channel(self, interaction: discord.Interaction, youtube_channel_id: str, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
 			if channel is None:
@@ -28,27 +32,65 @@ class Notifications(commands.Cog):
 				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
 			else:
 				try:
-					main.add_channel_to_whitelist(targetChannel.id)
+					# Easiest way to check if the given YouTube channel ID is valid is to check if the channel name can be fetched.
+					# If the channel name is None, the ID is invalid.
+					youtube_channel_name = await youtube.get_channel_name(youtube_channel_id)
+					if youtube_channel_name is None:
+						await interaction.response.send_message(f"Invalid YouTube channel ID. Please try again.",
+							ephemeral=True)
+						return
+
+					# Check if this Discord channel is already in the SQL database.
+					sql.add_discord_channel(targetChannel.id, targetChannel.name)
+
+					# Check if the given YT channel already has stored ID in database and if its already linked.
+					internal_social_media_channel = sql.get_id_for_channel_url(youtube_channel_id)
+					if internal_social_media_channel is not None:
+						# YT channel is already in database, and is already linked to this Discord channel.
+						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
+							await interaction.response.send_message(f"This channel already has a subscription to the given channel.",
+								ephemeral=True)
+						# YT channel is already in database, but not linked to this Discord channel.
+						else:
+							try:
+								sql.add_subscription(targetChannel.id, internal_social_media_channel)
+							except Exception as e:
+								main.logger.error(f"Error adding subscription to database: {e}\n")
+								await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+									ephemeral=True)
+					# YT channel is not in database yet, add it.
+					else:
+						internal_social_media_channel = sql.add_social_media_channel("YouTube", youtube_channel_id, youtube_channel_name)
+						try:
+							sql.add_subscription(targetChannel.id, internal_social_media_channel)
+						except Exception as e:
+							main.logger.error(f"Error adding subscription to database: {e}\n")
+							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+								ephemeral=True)
 
 				except Exception as e:
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
-					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding channel to whitelist: {e}\n")
+					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding YouTube channel subscription to given channel: {e}\n")
 
-				await interaction.response.send_message(f"{targetChannel.name} will now receive upcoming stream notifications!",
+				# Everything went ok, confirm to user
+				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel '{youtube_channel_name}'!",
 					ephemeral=True)
-				main.logger.info(f"[BOT.COMMAND] Channel {targetChannel.name} subscribed...\n")
+				main.logger.info(f"[BOT.COMMAND] YouTube channel '{youtube_channel_name}' subscribed to {targetChannel.name}...\n")
 
 		except Exception as e:
-			main.logger.error(f"Error subscribing discord channel for bot notifications: {e}\n")
+			main.logger.error(f"Error subscribing YouTube channel for bot notifications: {e}\n")
 
+	# TODO: This shouldn't require user to input the subscribed social media channel. Instead, the user should see a list of
+	# active subscriptions and input all values as a reply corresponding to the list to the bot's ephemeral message.
 
-
-	@app_commands.command(name="unsubscribe", description="Unsubscribe the current or given channel from receiving upcoming stream notifications.")
+	@app_commands.command(name="unsubscribe_channel", description="Unsubscribe a discord channel from receiving notifications from a YouTube channel.")
+	@app_commands.describe(social_media_channel="The URL of the social media channel (e.g., YouTube)",
+		channel="Optional: The Discord text channel to unsubscribe. Defaults to current."
+	)
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
-	async def remove_channel_notifications(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
-		targetChannel = None
+	async def unsubscribe_channel(self, interaction: discord.Interaction, social_media_channel: Optional[str]=None, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
 			if channel is None:
@@ -56,19 +98,49 @@ class Notifications(commands.Cog):
 			else:
 				targetChannel = channel
 
-			if not main.remove_channel_from_whitelist(targetChannel.id):
-				await interaction.response.send_message(f"Failed to unsubscribe {targetChannel.name}. Please check that the channel ID is valid.",
-					ephemeral=True)
-				main.logger.info(f"[BOT.COMMAND] Error removing channel from whitelist: Channel ID {targetChannel.id} not found.\n")
+			# If social_media_channel is provided, validate it
+			if social_media_channel:
+				internal_social_media_channel = sql.get_id_for_channel_url(social_media_channel)
+				if internal_social_media_channel is None:
+					await interaction.response.send_message(f"Invalid social media channel URL. Please try again.",
+						ephemeral=True)
+					return
+				target_social_media_name = sql.get_channel_name(internal_social_media_channel)
+
+				# Check if the subscription exists and remove it
+				if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel):
+					main.logger.info(f"Removing subscription of {target_social_media_name} for channel {targetChannel.name}...\n")
+					sql.remove_subscription(targetChannel.id, internal_social_media_channel)
+					await interaction.response.send_message(f"Channel {targetChannel.name} subscription for {target_social_media_name} removed.",
+						ephemeral=True)
+				else:
+					await interaction.response.send_message(f"No subscription found for {target_social_media_name} in {targetChannel.name}.",
+						ephemeral=True)
 			else:
-				await interaction.response.send_message(f"{targetChannel.name} will no longer receive upcoming stream notifications!",
-					ephemeral=True)
-				main.logger.info(f"[BOT.COMMAND] Channel {targetChannel.name} unsubscribed...")
+				# If no social_media_channel is provided, remove all subscriptions
+				main.logger.info(f"Checking for all active subscriptions for channel {targetChannel.name}...\n")
+				subscriptions = sql.list_social_media_subscriptions_for_discord_channel(targetChannel.id, "Youtube")
+				if subscriptions:
+					main.logger.info(f"Removing all active subscriptions for channel {targetChannel.name}...\n")
+					sql.remove_subscription(targetChannel.id, None)
+					await interaction.response.send_message(f"All channel {targetChannel.name} subscriptions for YouTube channels removed.",
+						ephemeral=True)
+				else:
+					await interaction.response.send_message(f"No YouTube channel subscriptions found for {targetChannel.name}.",
+						ephemeral=True)
+
+			if sql.get_discord_channels_for_social_channel(internal_social_media_channel) is None:
+				# If no Discord channels are subscribed to the social media channel, remove it from the database
+				sql.remove_social_media_channel(internal_social_media_channel)
+				sql.remove_latest_post(internal_social_media_channel)
+				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
 
 		except Exception as e:
-			main.logger.error(f"Error unsubscribing discord channel from bot notifications: {e}\n")
+			main.logger.error(f"Error unsubscribing Discord channel from YouTube notifications: {e}\n")
 
-
+#
+#	Query Discord channel subscriptions status
+#
 
 	@app_commands.command(name="check_status", description="Check if the current or given channel is receiving notifications.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
@@ -81,16 +153,65 @@ class Notifications(commands.Cog):
 			else:
 				targetChannel = channel
 
-			whitelisted_channels = main.get_whitelisted_channels()
-			if str(targetChannel.id) in whitelisted_channels:
-				await interaction.response.send_message(f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications!",
-					ephemeral=True)
+			notification_role = sql.get_notification_role(targetChannel.id)
+
+			subscriptions = sql.list_social_media_subscriptions_for_discord_channel(targetChannel.id)
+			if subscriptions is not None:
+				output = ""
+				for channel_id in subscriptions:
+					channel_name = sql.get_channel_name(channel_id)
+					# add each channel_id, join them into a string delimited by a line break
+					output += f"{channel_name}\n"
+				
+				message = f"{targetChannel.name} is currently subscribed to receive upcoming stream notifications from the following channels:\n{output}"
+				if notification_role is not None:
+					role = interaction.guild.get_role(int(notification_role))
+					if role is not None:
+						# Check if the bot has permission to mention roles
+						if interaction.guild.me.guild_permissions.mention_everyone:
+							main.logger.info(f"notification role found... {notification_role}\n")
+							message += f"\nDreamcatcher will ping {role.mention} on new activity."
+						else:
+							main.logger.warning(f"Bot lacks permission to mention roles in guild {interaction.guild.name}.\n")
+							message += f"\nDreamcatcher cannot mention the notification role due to insufficient permissions."
+					else:
+						main.logger.warning(f"Invalid or missing role for ID {notification_role} in guild {interaction.guild.name}.\n")
+						message += f"\nDreamcatcher could not find the notification role. Please update it using the appropriate command."
+				await interaction.response.send_message(message, ephemeral=True)
 			else:
-				await interaction.response.send_message(f"{targetChannel.name} is not subscribed to receive upcoming stream notifications.",
+				await interaction.response.send_message(f"{targetChannel.name} is not subscribed to any channels.",
 					ephemeral=True)
 
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error checking discord channel status: {e}\n")
+
+
+#
+#	Discord channel notification functions
+#
+	@app_commands.command(name="update_notification_role", description="Add or update the role that will be pinged when a new notification is sent.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	async def add_notification_role(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel=None):
+		try:
+			# if no given channel, defaults to the context
+			if channel is None:
+				targetChannel = interaction.channel
+			else:
+				targetChannel = channel
+
+			sql.add_notification_role(targetChannel.id, role.id)
+			await interaction.response.send_message(f"Notification role for channel {targetChannel.name} updated to {role.name}.",
+				ephemeral=True)
+			main.logger.info(f"[BOT.COMMAND] Notification role updated to {role.name}...\n")
+
+		except Exception as e:
+			main.logger.error(f"[BOT.COMMAND.ERROR] Error updating notification role: {e}\n")
+
+
+#
+#	SETUP
+#
 
 async def setup(_bot):
 	await _bot.add_cog(Notifications(_bot))
