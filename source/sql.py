@@ -32,6 +32,12 @@ def initialize_placeholder_data():
 	id = add_social_media_channel("YouTube", "UCIfAvpeIWGHb0duCkMkmm2Q", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
+	#id = add_social_media_channel("YouTube", "UCHxUvAIXHfDzpTW02v7Qarg", "Kohaku Yumekui")
+	#add_subscription(main.HOME_CHANNEL_ID, id)
+
+	#id = add_social_media_channel("YouTube", "UChPjH2nCvbvL8GDHWUvhuDw", "Goomi Ch.")
+	#add_subscription(main.HOME_CHANNEL_ID, id)
+
 	id = add_social_media_channel("Bluesky", "niminightmare.bsky.social", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 

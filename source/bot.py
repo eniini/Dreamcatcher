@@ -208,7 +208,6 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 				url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
 			)
 			if images:
-
 				if (len(images) > 1):
 					# multiple embeds hack. https://github.com/Rapptz/discord.py/discussions/9045
 					embeds = []
@@ -236,7 +235,12 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 						content=f"{ping_role}",
 						embed=embed
 					)
-
+			else:
+				# No image, send just the embed
+				await channel.send(
+					content=f"{ping_role}",
+					embed=embed
+				)
 			# Post extracted links after embed message to generate previews correctly
 			if links:
 				for link in links:

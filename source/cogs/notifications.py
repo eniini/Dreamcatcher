@@ -4,6 +4,7 @@ from discord import app_commands
 from typing import Optional
 
 from atproto import Client
+from atproto import exceptions
 
 import main
 import sql
@@ -39,12 +40,17 @@ class Notifications(commands.Cog):
 				try:
 					# Use the Atproto client to check if the Bluesky channel ID is valid
 					# basic resolve_handle() call shouldn't need login/auth
-					is_valid_channel = await self.client.resolve_handle(bluesky_channel_id)
-					if is_valid_channel is None:
+					try:
+						is_valid_channel = self.client.resolve_handle(bluesky_channel_id)
+						if is_valid_channel is None:
+							await interaction.response.send_message(f"Invalid Bluesky channel ID. Please try again.",
+								ephemeral=True)
+							return
+					except exceptions.AtProtocolError as e:
 						await interaction.response.send_message(f"Invalid Bluesky channel ID. Please try again.",
 							ephemeral=True)
 						return
-					
+
 					# Check if this Discord channel is already in the SQL database.
 					sql.add_discord_channel(targetChannel.id, targetChannel.name)
 
@@ -78,9 +84,9 @@ class Notifications(commands.Cog):
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Bluesky channel subscription to given channel: {e}\n")
 			
 			# Everything went ok, confirm to user
-			await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Bluesky channel '{bluesky_channel_id}'!",
+			await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Bluesky channel *{bluesky_channel_id}*!",
 				ephemeral=True)
-			main.logger.info(f"[BOT.COMMAND] Bluesky channel '{bluesky_channel_id}' subscribed to {targetChannel.name}...\n")
+			main.logger.info(f"[BOT.COMMAND] Bluesky channel [{bluesky_channel_id}] subscribed to {targetChannel.name}...\n")
 		
 		except Exception as e:
 			main.logger.error(f"Error subscribing Bluesky channel for bot notifications: {e}\n")
@@ -148,7 +154,7 @@ class Notifications(commands.Cog):
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding YouTube channel subscription to given channel: {e}\n")
 
 				# Everything went ok, confirm to user
-				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel '{youtube_channel_name}'!",
+				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel *{youtube_channel_name}*!",
 					ephemeral=True)
 				main.logger.info(f"[BOT.COMMAND] YouTube channel '{youtube_channel_name}' subscribed to {targetChannel.name}...\n")
 
