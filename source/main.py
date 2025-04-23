@@ -24,10 +24,6 @@ BLUESKY_PASSWORD	= os.getenv("BLUESKY_PASSWORD")
 HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
 HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
 
-TARGET_YOUTUBE_ID	= os.getenv("TARGET_CHANNEL_ID")
-TARGET_PLAYLIST_ID	= os.getenv("TARGET_PLAYLIST_ID")
-TARGET_BLUESKY_ID	= os.getenv("TARGET_BLUESKY_ID")
-
 PUBLIC_WEBHOOK_IP = os.getenv("PUBLIC_WEBHOOK_IP")
 
 # Setup logging for the main process

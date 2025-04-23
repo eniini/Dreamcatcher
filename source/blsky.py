@@ -9,12 +9,10 @@ import bot
 import sql
 
 postFetchCount = 5 # number of posts to fetch from Bluesky API per API call. (More than one is necessary if multiple posts are made in a short time)
-postFetchTimer = 10 # time in seconds to wait before fetching new posts.
+postFetchTimer = 60 # time in seconds to wait before fetching new posts.
 
 # Modifies Bluesky URI format (at://<DID>/<COLLECTION>/<RKEY>) into standard URL
 URI_TO_URL_REGEX = re.compile(r"at://([^/]+)/([^/]+)/([^/]+)")
-
-
 
 async def initialize_bluesky_client() -> None:
 	global client
@@ -66,37 +64,6 @@ def reconnect_api_with_backoff(max_retries=5, base_delay=2):
 	return decorator
 
 # --------------------------------- BLUESKY API INTEGRATION ---------------------------------#
-
-def bluesky_post_already_notified(post_uri: str) -> bool:
-	"""
-	Checks if the given Bluesky post URI is already stored in the database.
-	"""
-	try:
-		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
-		if internal_channel_id is None:
-			main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when checking for duplicate post.\n")
-			return False
-		if sql.check_post_match(internal_channel_id, post_uri) is True:
-			main.logger.info(f"Post {post_uri} already notified, skipping...\n")
-			return True
-		return False
-	except Exception as e:
-		main.logger.error(f"Error checking database if post is already notified: {e}\n")
-		return False
-
-def bluesky_save_post_to_db(post_uri: str, content: str) -> None:
-	"""
-	Saves the Bluesky post URI and content in the database.
-	"""
-	try:
-		internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
-		if internal_channel_id is None:
-			main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found when saving post.\n")
-			return
-		sql.update_latest_post(internal_channel_id, post_uri, content)
-	except Exception as e:
-		main.logger.error(f"Error saving post to database: {e}\n")
-
 
 def convert_bluesky_uri_to_url(at_uri: str):
 	"""
@@ -192,12 +159,32 @@ def replace_urls(text: str, links: list) -> str:
 #
 
 @reconnect_api_with_backoff()
-async def fetch_bluesky_posts():
+async def fetch_bluesky_profile(channel_id):
+	"""
+	Fetches the profile (display name & avatar) of the target Bluesky user.
+	"""
+	try:
+		profile = client.get_profile(channel_id)
+		if profile:
+			display_name = profile.display_name
+			avatar_url = profile.avatar
+			return {"display_name": display_name, "avatar_url": avatar_url}
+		else:
+			return None
+
+	except Exception as e:
+		main.logger.error(f"Error fetching Bluesky profile: {e}\n")
+		return None
+
+
+
+@reconnect_api_with_backoff()
+async def fetch_bluesky_posts(channel_id):
 	"""
 	Fetches the latest Bluesky posts from the API.
 	"""
 	try:
-		feed = client.get_author_feed(actor=main.TARGET_BLUESKY_ID, limit=postFetchCount)
+		feed = client.get_author_feed(actor=channel_id, limit=postFetchCount)
 		# Extract post text from FeedViewPost objects
 		posts = []
 		for item in feed.feed:
@@ -216,48 +203,58 @@ async def share_bluesky_posts() -> None:
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
 	while True:
 		try:
-			# Fetch posts from Bluesky
-			posts = await fetch_bluesky_posts()
-			if not posts:
-				main.logger.info(f"No posts fetched, retrying after delay...\n")
-				await asyncio.sleep(postFetchTimer)
-				continue
+			# Fetch all YouTube subscriptions from the database
+			bluesky_subscriptions = sql.get_all_social_media_subscriptions_for_platform("Bluesky")
+			for channel_id in bluesky_subscriptions:
 
-			# Get the latest stored post ID from the database
-			internal_channel_id = sql.get_id_for_channel_url(main.TARGET_BLUESKY_ID)
-			if internal_channel_id is None:
-				main.logger.error(f"Bluesky channel ID for {main.TARGET_BLUESKY_ID} not found.\n")
-				await asyncio.sleep(postFetchTimer)
-				continue
+				internal_id = sql.get_id_for_channel_url(channel_id)
 
-			last_post_id = sql.get_latest_post_id(internal_channel_id)
+				# Fetch posts from Bluesky
+				posts = await fetch_bluesky_posts(channel_id)
+				if not posts:
+					continue
 
-			# Filter posts to include only those more recent than the stored post
-			new_posts = []
-			for post in posts:
-				if post['uri'] == last_post_id:
-					break
-				new_posts.append(post)
+				last_post_id = sql.get_latest_post_id(internal_id)
+				# Filter posts to include only those more recent than the stored post
+				new_posts = []
+				for post in posts:
+					if post['uri'] == last_post_id:
+						break
+					new_posts.append(post)
+				# if no new posts, skip to next channel
+				if len(new_posts) == 0:
+					continue
+				main.logger.info(f"Found {len(new_posts)} new posts for Bluesky channel {channel_id}...\n")
+				# get profile information for the channel
+				profile = await fetch_bluesky_profile(channel_id)
 
-			# Post new posts to Discord in reverse order (oldest first)
-			for post in reversed(new_posts):
-				post_uri = post['uri']
-				content = replace_urls(post['text'], post['links'])
-				images = post['post_images']
-				links = post['links']
+				# Post new posts to Discord in reverse order (oldest first)
+				for post in reversed(new_posts):
+					post_uri = post['uri']
+					content = replace_urls(post['text'], post['links'])
+					images = post['post_images']
+					links = post['links']
 
-				notify_list = sql.get_discord_channels_for_social_channel(internal_channel_id)
-				for discord_channel in notify_list:
-					main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
-					await bot.notify_bluesky_activity(discord_channel, post_uri, content, images, links)
+					notify_list = sql.get_discord_channels_for_social_channel(internal_id)
+					for discord_channel in notify_list:
+						main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
+						await bot.notify_bluesky_activity(
+							discord_channel,
+							post_uri,
+							content,
+							images,
+							links,
+							profile.get("display_name"),
+							profile.get("avatar_url")
+						)
 
-			# Update the database with the most recent post ID (first in the new_posts list)
-			if new_posts:
-				most_recent_post = new_posts[0]  # The first post in new_posts is the most recent
-				sql.update_latest_post(internal_channel_id, most_recent_post['uri'], most_recent_post['text'])
+				# Update the database with the most recent post ID (first in the new_posts list)
+				if new_posts:
+					most_recent_post = new_posts[0]  # The first post in new_posts is the most recent
+					sql.update_latest_post(internal_id, most_recent_post['uri'], most_recent_post['text'])
 
 		except Exception as e:
-			main.logger.error(f"Error in Bluesky post sharing task: {e}\n")
+			main.logger.error(f"Error while fetching Bluesky subscriptions or fetching posts: {e}\n")
 
 		# Wait before fetching new posts
 		await asyncio.sleep(postFetchTimer)
