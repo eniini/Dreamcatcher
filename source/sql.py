@@ -28,10 +28,11 @@ def initialize_placeholder_data():
 	main.logger.info(f"Clean setup, initalizing placeholder data...\n")
 
 	add_discord_channel(main.HOME_CHANNEL_ID, "DREAMCATCHER_HOME_CHANNEL")
-	id = add_social_media_channel("YouTube", main.TARGET_YOUTUBE_ID, None)
+
+	id = add_social_media_channel("YouTube", "UCIfAvpeIWGHb0duCkMkmm2Q", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
-	id = add_social_media_channel("Bluesky", main.TARGET_BLUESKY_ID, None)
+	id = add_social_media_channel("Bluesky", "niminightmare.bsky.social", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
 	conn = sqlite3.connect(db_file)

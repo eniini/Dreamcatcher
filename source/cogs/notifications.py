@@ -3,6 +3,8 @@ from discord.ext import commands
 from discord import app_commands
 from typing import Optional
 
+from atproto import Client
+
 import main
 import sql
 import youtube
@@ -11,8 +13,80 @@ class Notifications(commands.Cog):
 	def __init__(self, _bot):
 		self._bot = _bot
 
+	client = Client()
+
 #
-# Webhook-based subscription
+# Bluesky channel verification and subscription
+#
+
+	@app_commands.command(name="subscribe_bluesky_channel", description="Subscribe a discord channel to receive notifications from a Bluesky channel.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	async def subscribe_bluesky_channel(self, interaction: discord.Interaction, bluesky_channel_id: str, channel: discord.TextChannel=None):
+		try:
+			# if no given channel, defaults to the context
+			if channel is None:
+				targetChannel = interaction.channel
+			else:
+				targetChannel = channel
+			
+			# check if the bot has permission to send messages to the target channel
+			if not targetChannel.permissions_for(targetChannel.guild.me).send_messages:
+				await interaction.response.send_message(f"I don't have permission to send messages in {targetChannel.name}. Please try subscribing again after granting the necessary permissions.",
+					ephemeral=True)
+				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
+			else:
+				try:
+					# Use the Atproto client to check if the Bluesky channel ID is valid
+					# basic resolve_handle() call shouldn't need login/auth
+					is_valid_channel = await self.client.resolve_handle(bluesky_channel_id)
+					if is_valid_channel is None:
+						await interaction.response.send_message(f"Invalid Bluesky channel ID. Please try again.",
+							ephemeral=True)
+						return
+					
+					# Check if this Discord channel is already in the SQL database.
+					sql.add_discord_channel(targetChannel.id, targetChannel.name)
+
+					# Check if the given Bluesky channel already has stored ID in database and if its already linked.
+					internal_social_media_channel = sql.get_id_for_channel_url(bluesky_channel_id)
+					if internal_social_media_channel is not None:
+						# Bluesky channel is already in database, and is already linked to this Discord channel.
+						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
+							await interaction.response.send_message(f"This channel already has a subscription to the given channel.",
+								ephemeral=True)
+						# Bluesky channel is already in database, but not linked to this Discord channel.
+						else:
+							try:
+								sql.add_subscription(targetChannel.id, internal_social_media_channel)
+							except Exception as e:
+								main.logger.error(f"Error adding subscription to database: {e}\n")
+								await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+									ephemeral=True)
+					# Bluesky channel is not in database yet, add it.
+					else:
+						internal_social_media_channel = sql.add_social_media_channel("Bluesky", bluesky_channel_id, bluesky_channel_id)
+						try:
+							sql.add_subscription(targetChannel.id, internal_social_media_channel)
+						except Exception as e:
+							main.logger.error(f"Error adding subscription to database: {e}\n")
+							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+								ephemeral=True)
+				except Exception as e:
+					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+						ephemeral=True)
+					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Bluesky channel subscription to given channel: {e}\n")
+			
+			# Everything went ok, confirm to user
+			await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Bluesky channel '{bluesky_channel_id}'!",
+				ephemeral=True)
+			main.logger.info(f"[BOT.COMMAND] Bluesky channel '{bluesky_channel_id}' subscribed to {targetChannel.name}...\n")
+		
+		except Exception as e:
+			main.logger.error(f"Error subscribing Bluesky channel for bot notifications: {e}\n")
+
+#
+# Youtube channel verification and subscription
 #
 	@app_commands.command(name="subscribe_youtube_channel", description="Subscribe a discord channel to receive notifications from a YouTube channel.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
@@ -80,6 +154,8 @@ class Notifications(commands.Cog):
 
 		except Exception as e:
 			main.logger.error(f"Error subscribing YouTube channel for bot notifications: {e}\n")
+
+
 
 	# TODO: This shouldn't require user to input the subscribed social media channel. Instead, the user should see a list of
 	# active subscriptions and input all values as a reply corresponding to the list to the bot's ephemeral message.
@@ -185,7 +261,6 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error checking discord channel status: {e}\n")
 
-
 #
 #	Discord channel notification functions
 #
@@ -207,7 +282,6 @@ class Notifications(commands.Cog):
 
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error updating notification role: {e}\n")
-
 
 #
 #	SETUP

@@ -183,7 +183,7 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 	else:
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
-async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list) -> None:
+async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	# check if the bot has permission to send messages in the channel
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
@@ -201,28 +201,42 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 				url=post_url,
 				timestamp = discord.utils.utcnow()
 			)
-			embed.set_author(name="Nimi Nightmare 💭",
-				icon_url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
+			embed.set_author(name=f"{channel_name}",
+				icon_url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
 			)
 			embed.set_thumbnail(
-				url="https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
+				url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
 			)
 			if images:
-				# Show the first image in the embed post
-				embed.set_image(url=images[0])
-				await channel.send(
-					embed=embed
-				)
-			# Send the actual embed image
-			await channel.send(
-				content=f"{ping_role}",
-				embed=embed
-			)
-			# If multiple images exist, send them separately, ignoring the first one
-			if len(images) > 1:
-				for image in images[1:]:
-					# Send additional images as normal messages
-					await channel.send(image)
+
+				if (len(images) > 1):
+					# multiple embeds hack. https://github.com/Rapptz/discord.py/discussions/9045
+					embeds = []
+					for image in images:
+						# store the previously generated embed for the first embed in the embeds[] list
+						if len(embeds) == 0:
+							embed.set_image(url=image)
+							embeds.append(embed)
+						else:
+							# create a new embed for each image
+							image_embed = discord.Embed(
+								url=post_url,
+							)
+							image_embed.set_image(url=image)
+							embeds.append(image_embed)
+					# Send the embeds in a single message
+					await channel.send(
+						content=f"{ping_role}",
+						embeds=embeds
+					)
+				else:
+					embed.set_image(url=images[0])
+					# Send the actual embed image
+					await channel.send(
+						content=f"{ping_role}",
+						embed=embed
+					)
+
 			# Post extracted links after embed message to generate previews correctly
 			if links:
 				for link in links:
