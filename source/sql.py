@@ -179,9 +179,29 @@ def add_notification_role(discord_channel_id, notification_role):
 	finally:
 		conn.close()
 
+def remove_notification_role(discord_channel_id):
+	"""
+	Remove the notification role for a discord channel.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			UPDATE DiscordChannels SET notification_role = NULL
+			WHERE channel_id = ?
+		''', (discord_channel_id,))
+		conn.commit()
+	except sqlite3.Error as e:
+		main.logger.error(f"Error removing notification role: {e}")
+	finally:
+		conn.close()
+
 def get_notification_role(discord_channel_id):
 	"""
 	Get the notification role for a discord channel.
+	Ignore rows where notification_role is NULL.
 	"""
 	conn = get_connection()
 	if conn is None:
@@ -190,7 +210,7 @@ def get_notification_role(discord_channel_id):
 		cursor = conn.cursor()
 		cursor.execute('''
 			SELECT notification_role FROM DiscordChannels
-			WHERE channel_id = ?
+			WHERE channel_id = ? AND notification_role IS NOT NULL
 		''', (discord_channel_id,))
 		row = cursor.fetchone()
 		return row['notification_role'] if row else None

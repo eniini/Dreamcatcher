@@ -11,7 +11,8 @@ import sql
 intents = discord.Intents.default()
 intents.messages = True # allow bot to read messages
 intents.message_content = True # allow bot to read message content
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix=commands.when_mentioned_or(), intents=intents)
+bot.remove_command("help") # remove default help command
 
 # track the bluesky/youtube task so we can cancel it
 bluesky_task = None
@@ -20,6 +21,28 @@ youtube_task = None
 #
 #	Discord bot helper & debug functions
 #
+
+async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+	"""
+	Handles errors for slash commands.
+	"""
+	try:
+		if isinstance(error, discord.app_commands.CheckFailure):
+			message = str(error) or "You do not have permission to use this command."
+			await interaction.response.send_message(message, ephemeral=True)
+		elif isinstance(error, discord.app_commands.CommandNotFound):
+			await interaction.response.send_message("Command not found.", ephemeral=True)
+		elif isinstance(error, discord.app_commands.MissingPermissions):
+			await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+		elif isinstance(error, discord.app_commands.BotMissingPermissions):
+			await interaction.response.send_message("I do not have permission to use this command.", ephemeral=True)
+		elif isinstance(error, discord.app_commands.CommandInvokeError):
+			await interaction.response.send_message("An error occurred while executing the command.", ephemeral=True)
+		else:
+			await interaction.response.send_message(f"An unexpected error occurred:", ephemeral=True)
+			main.logger.error(f"An unexpected error occurred: {error}\n")
+	except Exception as e:
+		main.logger.error(f"[ERROR HANDLER FAILED]: {e}\n")
 
 async def bot_internal_message(message: str) -> None:
 	"""
@@ -72,6 +95,9 @@ async def on_ready() -> None:
 
 		# Loads the slash commands
 		await load_cogs()
+
+		# register error handler
+		bot.tree.on_error = on_app_command_error
 
 		# Start the Bluesky post sharing task
 		if bluesky_task is None or bluesky_task.done():

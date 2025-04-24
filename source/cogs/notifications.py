@@ -16,13 +16,20 @@ class Notifications(commands.Cog):
 
 	client = Client()
 
-#
-# Bluesky channel verification and subscription
-#
+	def text_channel_only():
+		def predicate(interaction: discord.Interaction) -> bool:
+			if not isinstance(interaction.channel, discord.TextChannel):
+				raise app_commands.CheckFailure("This command can only be used in text channels.")
+			return True
+		return app_commands.check(predicate)
 
-	@app_commands.command(name="subscribe_bluesky_channel", description="Subscribe a discord channel to receive notifications from a Bluesky channel.")
+
+
+	@app_commands.command(name="add_bluesky_subscription", description="Subscribe a discord channel to receive notifications from a Bluesky profile.")
+	@app_commands.describe(bluesky_channel_id="The ID of the Bluesky profile. This is usually in the format of 'username.bsky.social'", channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
 	async def subscribe_bluesky_channel(self, interaction: discord.Interaction, bluesky_channel_id: str, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -91,12 +98,13 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"Error subscribing Bluesky channel for bot notifications: {e}\n")
 
-#
-# Youtube channel verification and subscription
-#
-	@app_commands.command(name="subscribe_youtube_channel", description="Subscribe a discord channel to receive notifications from a YouTube channel.")
+
+
+	@app_commands.command(name="add_youtube_subscription", description="Subscribe a discord channel to receive notifications from a YouTube channel.")
+	@app_commands.describe(youtube_channel_id="ID of the YT channel. Use 'Copy channel ID' inside YT channel descriptions' 'Share channel' button.", channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
 	async def subscribe_youtube_channel(self, interaction: discord.Interaction, youtube_channel_id: str, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -163,15 +171,11 @@ class Notifications(commands.Cog):
 
 
 
-	# TODO: This shouldn't require user to input the subscribed social media channel. Instead, the user should see a list of
-	# active subscriptions and input all values as a reply corresponding to the list to the bot's ephemeral message.
-
-	@app_commands.command(name="unsubscribe_channel", description="Unsubscribe a discord channel from receiving notifications from a YouTube channel.")
-	@app_commands.describe(social_media_channel="The URL of the social media channel (e.g., YouTube)",
-		channel="Optional: The Discord text channel to unsubscribe. Defaults to current."
-	)
+	@app_commands.command(name="remove_subscription", description="Unsubscribe the given discord channel from a social media channel or all subscribed channels.")
+	@app_commands.describe(social_media_channel="Optional: Name of the social media subscription. If empty, clears all active subscriptions.", channel="Optional: The Discord text channel to unsubscribe the channel from. Defaults to current.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
 	async def unsubscribe_channel(self, interaction: discord.Interaction, social_media_channel: Optional[str]=None, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -187,6 +191,7 @@ class Notifications(commands.Cog):
 					await interaction.response.send_message(f"Invalid social media channel URL. Please try again.",
 						ephemeral=True)
 					return
+
 				target_social_media_name = sql.get_channel_name(internal_social_media_channel)
 
 				# Check if the subscription exists and remove it
@@ -211,8 +216,8 @@ class Notifications(commands.Cog):
 					await interaction.response.send_message(f"No YouTube channel subscriptions found for {targetChannel.name}.",
 						ephemeral=True)
 
+			# Cleanup, If no Discord channels are subscribed to the social media channel, remove it from the database
 			if sql.get_discord_channels_for_social_channel(internal_social_media_channel) is None:
-				# If no Discord channels are subscribed to the social media channel, remove it from the database
 				sql.remove_social_media_channel(internal_social_media_channel)
 				sql.remove_latest_post(internal_social_media_channel)
 				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
@@ -220,13 +225,36 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"Error unsubscribing Discord channel from YouTube notifications: {e}\n")
 
-#
-#	Query Discord channel subscriptions status
-#
+	# Autocomplete handler for unsubscribe
+	@unsubscribe_channel.autocomplete("social_media_channel")
+	@text_channel_only()
+	async def autocomplete_social_media_channel(self, interaction: discord.Interaction, current: str):
+		channel = interaction.channel
 
-	@app_commands.command(name="check_status", description="Check if the current or given channel is receiving notifications.")
+		subscriptions = sql.list_social_media_subscriptions_for_discord_channel(channel.id)
+		if not subscriptions:
+			return []
+		
+		choices = []
+		for internal_id in subscriptions:
+			name = sql.get_channel_name(internal_id)
+			url = sql.get_channel_url(internal_id)
+
+			if name is None or url is None:
+				# don't add broken data
+				continue
+			# convert to lowercase, compare against channel name
+			if current.lower() in name.lower():
+				choices.append(discord.app_commands.Choice(name=f"{name}", value=url))
+		return choices[:25] # Limit to 25 choices (Discord's limit)
+
+
+
+	@app_commands.command(name="list_subscriptions", description="Returns the list of social media subscriptions for the given channel, and the notification role.")
+	@app_commands.describe(channel="Optional: The Discord text channel to check. Defaults to current.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
 	async def check_channel_status(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -270,9 +298,11 @@ class Notifications(commands.Cog):
 #
 #	Discord channel notification functions
 #
-	@app_commands.command(name="update_notification_role", description="Add or update the role that will be pinged when a new notification is sent.")
+	@app_commands.command(name="set_notification_role", description="Add or update the role that will be pinged when a new notification is sent.")
+	@app_commands.describe(role="The role that will be notified whenever new content is posted.", channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
 	async def add_notification_role(self, interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
@@ -288,6 +318,32 @@ class Notifications(commands.Cog):
 
 		except Exception as e:
 			main.logger.error(f"[BOT.COMMAND.ERROR] Error updating notification role: {e}\n")
+
+	@app_commands.command(name="remove_notification_role", description="Remove the role that will be pinged when a new notification is sent.")
+	@app_commands.describe(channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
+	async def remove_notification_role(self, interaction: discord.Interaction, channel: discord.TextChannel=None):
+		try:
+			# if no given channel, defaults to the context
+			if channel is None:
+				targetChannel = interaction.channel
+			else:
+				targetChannel = channel
+
+			if (sql.get_notification_role(targetChannel.id) is None):
+				await interaction.response.send_message(f"No notification role set for channel {targetChannel.name}.",
+					ephemeral=True)
+				return
+
+			sql.remove_notification_role(targetChannel.id)
+			await interaction.response.send_message(f"Notification role for channel {targetChannel.name} removed.",
+				ephemeral=True)
+			main.logger.info(f"[BOT.COMMAND] Notification role removed...\n")
+
+		except Exception as e:
+			main.logger.error(f"[BOT.COMMAND.ERROR] Error removing notification role: {e}\n")
 
 #
 #	SETUP
