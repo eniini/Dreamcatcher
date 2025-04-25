@@ -9,7 +9,7 @@ import web
 import sql
 
 global public_webhook_address
-public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
+public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook?token={main.WEBHOOK_TOKEN}"
 
 #
 #	Webhook endpoints
@@ -39,6 +39,12 @@ async def youtube_webhook(request: Request):
 	"""
 	Receives YouTube Web Sub notifications when a new video is posted.
 	"""
+
+	token = request.query_params.get("token")
+	if token != main.WEBHOOK_TOKEN:
+		main.logger.warning("Invalid token in YouTube webhook request: [{token}]")
+		return {"status": "error", "detail": "Invalid token"}
+
 	data = await request.body()
 	main.logger.info(f"📦 Webhook received POST:\n{data.decode()}")
 	# parse received XMl data

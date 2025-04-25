@@ -24,7 +24,8 @@ BLUESKY_PASSWORD	= os.getenv("BLUESKY_PASSWORD")
 HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
 HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
 
-PUBLIC_WEBHOOK_IP = os.getenv("PUBLIC_WEBHOOK_IP")
+PUBLIC_WEBHOOK_IP	= os.getenv("PUBLIC_WEBHOOK_IP")
+WEBHOOK_TOKEN		= os.getenv("WEBHOOK_TOKEN")
 
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO)  # Change this to WARNING for production!
