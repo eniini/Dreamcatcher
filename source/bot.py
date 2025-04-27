@@ -18,6 +18,7 @@ bot.remove_command("help") # remove default help command
 # track the bluesky/youtube task so we can cancel it
 bluesky_task = None
 youtube_task = None
+twitch_task = None
 
 #
 #	Discord bot helper & debug functions
@@ -199,7 +200,9 @@ async def on_shutdown():
 			await twitch_task
 		except asyncio.CancelledError:
 			main.logger.error("Twitch task cancelled.\n")
-
+		# close the Twitch HTTP session
+		await twitch.close_twitch_session()
+	
 	await bot.close()
 
 #
@@ -316,7 +319,6 @@ async def notify_twitch_activity(target_channel: str, activity_type: str, channe
 			if activity_type == "liveStreamNow":
 				await channel.send(
 					f"{ping_role}**{channel_name} is now live!** 🔴\n"
-					f"Title: {title}\n"
 					f"https://www.twitch.tv/{channel_name}"
 				)
 			elif activity_type == "liveStreamSchedule":

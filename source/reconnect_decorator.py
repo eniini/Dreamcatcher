@@ -4,7 +4,7 @@ import functools
 import main
 import bot
 
-def reconnect_api_with_backoff(client_initialize_func: function, client_name: str, max_retries=5, base_delay=2, ):
+def reconnect_api_with_backoff(client_initialize_func, client_name: str, max_retries=5, base_delay=2):
 	"""
 	Tries to re-establish given API connection with exponential falloff.
 	Parameters:

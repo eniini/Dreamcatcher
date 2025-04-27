@@ -4,7 +4,7 @@ from googleapiclient.discovery import build
 import main
 import bot
 import sql
-import reconnect_decorator as reconnect_api_with_backoff
+from reconnect_decorator import reconnect_api_with_backoff
 
 # To note: Youtube API has a quota limit of 10,000 units per day.
 # Activities.list() and PlaylistItems.list() both cost 1 unit per request.
@@ -20,10 +20,8 @@ wait_time = 60  # default wait time between checks, in seconds
 
 async def initialize_youtube_client():
 	global youtubeClient
-	global public_webhook_address
 	try:
 		youtubeClient = build('youtube', 'v3', developerKey=main.YOUTUBE_API_KEY)
-		public_webhook_address = f"http://{main.PUBLIC_WEBHOOK_IP}:8000/youtube-webhook"
 		main.logger.info(f"Youtube API initialized successfully.\n")
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")

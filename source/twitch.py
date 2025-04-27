@@ -11,7 +11,6 @@ import bot
 WAIT_TIME = 60  # seconds between checks
 
 twitch_session = None
-twitch_client_id = main.TWITCH_CLIENT_ID
 twitch_auth_token = None
 twitch_auth_token_expires = 0
 
@@ -22,6 +21,11 @@ async def initialize_twitch_session():
 	global twitch_session
 	if twitch_session is None or twitch_session.closed:
 		twitch_session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False))
+		# check if the session is open
+		if not twitch_session.closed:
+			main.logger.info("Twitch session initialized successfully.\n")
+		else:
+			main.logger.error("Failed to initialize Twitch session.\n")
 
 async def close_twitch_session():
 	global twitch_session
@@ -43,7 +47,7 @@ async def initialize_twitch_auth_token(force_refresh: bool = False) -> str:
 
 		token_url = "https://id.twitch.tv/oauth2/token"
 		payload = {
-			"client_id": twitch_client_id,
+			"client_id": main.TWITCH_CLIENT_ID,
 			"client_secret": main.TWITCH_CLIENT_SECRET,
 			"grant_type": "client_credentials"
 		}
@@ -68,13 +72,12 @@ async def twitch_get(endpoint: str, params: dict = None) -> dict:
 	endpoint: Twitch API endpoint to call (e.g., "users", "streams")
 	params: dictionary of query params
 	"""
-	await initialize_twitch_session()
-	access_token = await initialize_twitch_auth_token()
+	global twitch_auth_token
 
 	url = f"https://api.twitch.tv/helix/{endpoint}"
 	headers = {
-		"Client-ID": twitch_client_id,
-		"Authorization": f"Bearer {access_token}"
+		"Client-ID": main.TWITCH_CLIENT_ID,
+		"Authorization": f"Bearer {twitch_auth_token}"
 	}
 
 	async with twitch_session.get(url, headers=headers, params=params) as response:
@@ -111,6 +114,7 @@ async def fetch_twitch_stream_info(user_login: str) -> dict | None:
 	"""
 	Fetches the stream information for a given Twitch user.
 	"""
+	main.logger.info(f"Fetching stream info for user: {user_login}...\n")
 	data = await twitch_get("streams", params={"user_login": user_login})
 	# Check if the stream is live
 	if data.get("data"):
@@ -121,6 +125,7 @@ async def fetch_twitch_scheduled_broadcast(user_id: str) -> dict | None:
 	"""
 	Fetches the scheduled broadcast information for a given Twitch user ID.
 	"""
+	main.logger.info(f"Fetching scheduled broadcast info for user ID: {user_id}...\n")
 	data = await twitch_get("schedule", params= {"broadcaster_id": user_id, "first": 1})
 	segments = data.get("data", {}).get("segments", [])
 	# Check if there are any scheduled segments
@@ -133,7 +138,7 @@ async def fetch_twitch_scheduled_broadcast(user_id: str) -> dict | None:
 #
 
 async def check_for_twitch_activities():
-	global twitch_session
+	global twitch_session, twitch_auth_token
 
 	main.logger.info("Starting the Twitch activity sharing task...\n")
 	while True:
@@ -141,15 +146,25 @@ async def check_for_twitch_activities():
 			twitch_subscriptions = sql.get_all_social_media_subscriptions_for_platform("Twitch")
 			pending_notifications = []
 
-			for twitch_login_name in twitch_subscriptions:
+			twitch_auth_token = await initialize_twitch_auth_token()
+
+			for twitch_id in twitch_subscriptions:
+				internal_id = sql.get_id_for_channel_url(twitch_id)
+				twitch_login_name = sql.get_channel_name(internal_id)
+
 				try:
+					match = re.search(r"(?:twitch\.tv/)?([a-zA-Z0-9_]+)$", twitch_login_name.strip())
+					if not match:
+						main.logger.error(f"Invalid Twitch login format: {twitch_login_name}\n")
+						continue
+					twitch_login_name = match.group(1)
 					# Check if live
 					live_info = await fetch_twitch_stream_info(twitch_login_name)
 					if live_info:
 						pending_notifications.append({
 							"type": "liveStreamNow",
-							"user_login": twitch_login_name,
-							"user_id": live_info["user_id"],
+							"internal_id": internal_id,
+							"channel_name": twitch_login_name,
 							"title": live_info["title"]
 						})
 					else:
@@ -159,8 +174,8 @@ async def check_for_twitch_activities():
 						if scheduled_info:
 							pending_notifications.append({
 								"type": "liveStreamSchedule",
-								"user_login": twitch_login_name,
-								"user_id": user_id,
+								"internal_id": internal_id,
+								"channel_name": twitch_login_name,
 								"title": scheduled_info["title"],
 								"start_time": scheduled_info["start_time"]
 							})
@@ -180,20 +195,20 @@ async def process_twitch_notifications(pending_notifications: list[dict]) -> Non
 	Process the batch of Twitch activities, updating database and notifying Discord channels.
 	"""
 	for item in pending_notifications:
-		virtual_id = item["user_id"] + item["type"]
+		virtual_id = str(item["internal_id"]) + item["title"] + item["type"]
 
-		if sql.check_post_match(item["user_login"], virtual_id):
+		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
 
-		sql.update_latest_post(item["user_login"], virtual_id, item["title"])
+		sql.update_latest_post(item["internal_id"], virtual_id, item["title"])
 
-		discord_channels = sql.get_discord_channels_for_social_media(item["user_login"])
+		discord_channels = sql.get_discord_channels_for_social_channel(item["internal_id"])
 
 		for discord_channel in discord_channels:
 			await bot.notify_twitch_activity(
 				discord_channel,
 				item["type"],
-				item["user_login"],
+				item["channel_name"],
 				item.get("title"),
 				item.get("start_time")
 			)

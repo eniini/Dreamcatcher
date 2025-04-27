@@ -7,7 +7,7 @@ from atproto import Client
 import main
 import bot
 import sql
-import reconnect_decorator as reconnect_api_with_backoff
+from reconnect_decorator import reconnect_api_with_backoff
 
 postFetchCount = 5 # number of posts to fetch from Bluesky API per API call. (More than one is necessary if multiple posts are made in a short time)
 postFetchTimer = 60 # time in seconds to wait before fetching new posts.

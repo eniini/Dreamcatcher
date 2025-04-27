@@ -8,18 +8,19 @@ import bot
 import blsky
 import sql
 import youtube
+import twitch
 
 load_dotenv()
 
 # Initialize API keys & Discord Home Server ID
 
 # APIS
-DISCORD_BOT_TOKEN	= os.getenv("DISCORD_BOT_TOKEN")
-YOUTUBE_API_KEY		= os.getenv("YOUTUBE_API_KEY")
-BLUESKY_USERNAME	= os.getenv("BLUESKY_USERNAME")
-BLUESKY_PASSWORD	= os.getenv("BLUESKY_PASSWORD")
-TWITCH_CLIENT_ID	= os.getenv("TWITCH_CLIENT_ID")
-TWITCH_AUTH_TOKEN	= os.getenv("TWITCH_AUTH_TOKEN")
+DISCORD_BOT_TOKEN		= os.getenv("DISCORD_BOT_TOKEN")
+YOUTUBE_API_KEY			= os.getenv("YOUTUBE_API_KEY")
+BLUESKY_USERNAME		= os.getenv("BLUESKY_USERNAME")
+BLUESKY_PASSWORD		= os.getenv("BLUESKY_PASSWORD")
+TWITCH_CLIENT_ID		= os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET	= os.getenv("TWITCH_CLIENT_SECRET")
 
 HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
 HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
@@ -46,6 +47,7 @@ async def main():
 	# initialize APIs
 	await blsky.initialize_bluesky_client()
 	await youtube.initialize_youtube_client()
+	await twitch.initialize_twitch_session()
 	
 	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
 
