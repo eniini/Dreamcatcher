@@ -161,6 +161,12 @@ class Notifications(commands.Cog):
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Twitch channel subscription to given channel: {e}\n")
+				
+				# Everything went ok, confirm to user
+				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Twitch channel *{twitch_channel_name}*!",
+					ephemeral=True)
+				main.logger.info(f"[BOT.COMMAND] Twitch channel '{twitch_channel_name}' subscribed to {targetChannel.name}...\n")
+
 		except Exception as e:
 			main.logger.error(f"Error subscribing Twitch channel for bot notifications: {e}\n")
 

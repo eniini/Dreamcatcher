@@ -94,16 +94,10 @@ async def twitch_get(endpoint: str, params: dict = None) -> dict:
 async def verify_twitch_channel(user_input: str) -> str | None:
 	# Fetches and verifies the Twitch channel ID from the channel handle
 	"""
-	Given a Twitch URL or username, validate existence and return the user ID if valid.
+	Given a Twitch username, validate existence and return the user ID if valid.
 	Returns None if the user does not exist.
 	"""
-	# Extract username if a URL is given
-	match = re.search(r"(?:twitch\.tv/)?([a-zA-Z0-9_]+)$", user_input.strip())
-	if not match:
-		return None
-	username = match.group(1)
-
-	data = await twitch_get("users", params={"login": username})
+	data = await twitch_get("users", params={"login": user_input})
 	if data.get("data"):
 		user_info = data["data"][0]
 		return user_info["id"]  # Return the internal user ID
@@ -114,23 +108,10 @@ async def fetch_twitch_stream_info(user_login: str) -> dict | None:
 	"""
 	Fetches the stream information for a given Twitch user.
 	"""
-	main.logger.info(f"Fetching stream info for user: {user_login}...\n")
 	data = await twitch_get("streams", params={"user_login": user_login})
 	# Check if the stream is live
 	if data.get("data"):
 		return data["data"][0]
-	return None
-
-async def fetch_twitch_scheduled_broadcast(user_id: str) -> dict | None:
-	"""
-	Fetches the scheduled broadcast information for a given Twitch user ID.
-	"""
-	main.logger.info(f"Fetching scheduled broadcast info for user ID: {user_id}...\n")
-	data = await twitch_get("schedule", params= {"broadcaster_id": user_id, "first": 1})
-	segments = data.get("data", {}).get("segments", [])
-	# Check if there are any scheduled segments
-	if segments:
-		return segments[0]
 	return None
 
 #
@@ -167,19 +148,6 @@ async def check_for_twitch_activities():
 							"channel_name": twitch_login_name,
 							"title": live_info["title"]
 						})
-					else:
-						# If not live, check schedule
-						user_id = sql.get_twitch_user_id(twitch_login_name)
-						scheduled_info = await fetch_twitch_scheduled_broadcast(user_id)
-						if scheduled_info:
-							pending_notifications.append({
-								"type": "liveStreamSchedule",
-								"internal_id": internal_id,
-								"channel_name": twitch_login_name,
-								"title": scheduled_info["title"],
-								"start_time": scheduled_info["start_time"]
-							})
-
 				except Exception as e:
 					main.logger.error(f"Error processing Twitch user {twitch_login_name}: {e}\n")
 
