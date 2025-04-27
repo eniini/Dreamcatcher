@@ -18,8 +18,23 @@ def get_connection():
 		return None
 
 #
-# Add Nimi's socials into database for placeholder/debugging.
+# Debug / Test Functions
 #
+
+def read_table_contents():
+	conn = get_connection()
+	if conn is None:
+		return
+	result_str = ""
+	result_str += (f"{pd.read_sql_query('SELECT * FROM DiscordChannels', conn)}\n")
+	result_str += (f"{pd.read_sql_query('SELECT * FROM SocialMediaChannels', conn)}\n")
+	result_str += (f"{pd.read_sql_query('SELECT * FROM Subscriptions', conn)}\n")
+	result_str += (f"{pd.read_sql_query('SELECT * FROM LatestPosts', conn)}\n")
+
+	conn.commit()
+	conn.close()
+
+	return result_str
 
 def initialize_placeholder_data():
 	"""
@@ -32,24 +47,10 @@ def initialize_placeholder_data():
 	id = add_social_media_channel("YouTube", "UCIfAvpeIWGHb0duCkMkmm2Q", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
-	#id = add_social_media_channel("YouTube", "UCHxUvAIXHfDzpTW02v7Qarg", "Kohaku Yumekui")
-	#add_subscription(main.HOME_CHANNEL_ID, id)
-
-	#id = add_social_media_channel("YouTube", "UChPjH2nCvbvL8GDHWUvhuDw", "Goomi Ch.")
-	#add_subscription(main.HOME_CHANNEL_ID, id)
-
 	id = add_social_media_channel("Bluesky", "niminightmare.bsky.social", "Nimi Nightmare")
 	add_subscription(main.HOME_CHANNEL_ID, id)
 
-	conn = sqlite3.connect(db_file)
-	if conn is None:
-		return
-	main.logger.info(f"{pd.read_sql_query('SELECT * FROM DiscordChannels', conn)}\n")
-	main.logger.info(f"{pd.read_sql_query('SELECT * FROM SocialMediaChannels', conn)}\n")
-	main.logger.info(f"{pd.read_sql_query('SELECT * FROM Subscriptions', conn)}\n")
-	main.logger.info(f"{pd.read_sql_query('SELECT * FROM LatestPosts', conn)}\n")
-	conn.commit()
-	conn.close()
+	main.logger.info(f"{read_table_contents()}\n")
 
 #
 # Database Connection & Setup

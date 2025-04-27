@@ -7,6 +7,7 @@ from atproto import Client
 import main
 import bot
 import sql
+import reconnect_decorator as reconnect_api_with_backoff
 
 postFetchCount = 5 # number of posts to fetch from Bluesky API per API call. (More than one is necessary if multiple posts are made in a short time)
 postFetchTimer = 60 # time in seconds to wait before fetching new posts.
@@ -30,38 +31,6 @@ async def initialize_bluesky_client() -> None:
 	except Exception as e:
 		main.logger.error(f"Failed to initialize Bluesky API client: {e}\n")
 		raise
-
-def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""
-	Tries to re-establish given API connection with exponential falloff.
-	"""
-	def decorator(api_func):
-		@functools.wraps(api_func)
-		async def wrapper(*args, **kwargs):
-			attempt=0
-			while (attempt < max_retries):
-				try:
-					return await api_func(*args, **kwargs)
-				except Exception as e:
-					attempt+=1
-					main.logger.warning(f"Bluesky API call failed! (attempt{attempt}/{max_retries}): {e}\n")
-
-					if ("quotaExceeded" in str(e) or "403" in str(e)):
-						main.logger.critical(f"Bot has exceeded Bluesky API quota.\n")
-						bot.bot_internal_message("Bot has exceeded Blueskye API quota!")
-						return None
-					if (attempt == max_retries):
-						main.logger.error(f"Max retries reached. Could not recover API connection.\n")
-						bot.bot_internal_message("Bot failed to connect to Bluesky API after max retries...")
-
-					wait_time = base_delay * pow(2, attempt - 1)
-					main.logger.info(f"Reinitializing Bluesky API client in {wait_time:.2f} seconds...\n")
-
-					await asyncio.sleep(wait_time)
-					# try to reconnect API
-					await initialize_bluesky_client()
-		return wrapper
-	return decorator
 
 # --------------------------------- BLUESKY API INTEGRATION ---------------------------------#
 
@@ -158,7 +127,7 @@ def replace_urls(text: str, links: list) -> str:
 #	Bluesky post sharing task
 #
 
-@reconnect_api_with_backoff()
+@reconnect_api_with_backoff(initialize_bluesky_client, "Bluesky")
 async def fetch_bluesky_profile(channel_id):
 	"""
 	Fetches the profile (display name & avatar) of the target Bluesky user.
@@ -178,7 +147,7 @@ async def fetch_bluesky_profile(channel_id):
 
 
 
-@reconnect_api_with_backoff()
+@reconnect_api_with_backoff(initialize_bluesky_client, "Bluesky")
 async def fetch_bluesky_posts(channel_id):
 	"""
 	Fetches the latest Bluesky posts from the API.

@@ -9,6 +9,7 @@ from atproto import exceptions
 import main
 import sql
 import youtube
+import twitch
 
 class Notifications(commands.Cog):
 	def __init__(self, _bot):
@@ -98,6 +99,70 @@ class Notifications(commands.Cog):
 		except Exception as e:
 			main.logger.error(f"Error subscribing Bluesky channel for bot notifications: {e}\n")
 
+
+
+	@app_commands.command(name="add_twitch_subscription", description="Subscribe a discord channel to receive notifications from a Twitch channel.")
+	@app_commands.describe(twitch_channel_name="Channel name (http:://www.twitch.tv/[channel])", channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
+	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
+	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
+	@text_channel_only()
+	async def subscribe_twitch_channel(self, interaction: discord.Interaction, twitch_channel_name: str, channel: discord.TextChannel=None):
+		try:
+			# if no given channel, defaults to the context
+			if channel is None:
+				targetChannel = interaction.channel
+			else:
+				targetChannel = channel
+
+			# check if the bot has permission to send messages to the target channel
+			if not targetChannel.permissions_for(targetChannel.guild.me).send_messages:
+				await interaction.response.send_message(f"I don't have permission to send messages in {targetChannel.name}. Please try subscribing again after granting the necessary permissions.",
+					ephemeral=True)
+				main.logger.info(f"[BOT.COMMAND] Bot does not have permission to send messages in {targetChannel.name}\n")
+			else:
+				try:
+					# Twitch verification logic here
+					twitch_channel_id = None
+					twitch_channel_id = await twitch.verify_twitch_channel(twitch_channel_name)
+					if twitch_channel_id is None:
+						await interaction.response.send_message(f"Invalid Twitch channel ID. Please try again.",
+							ephemeral=True)
+						return
+
+					# Check if this Discord channel is already in the SQL database.
+					sql.add_discord_channel(targetChannel.id, targetChannel.name)
+
+					# Check if the given Twitch channel already has stored ID in database and if its already linked.
+					internal_social_media_channel = sql.get_id_for_channel_url(twitch_channel_id)
+					if internal_social_media_channel is not None:
+						# Twitch channel is already in database, and is already linked to this Discord channel.
+						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
+							await interaction.response.send_message(f"This channel already has a subscription to the given channel.",
+								ephemeral=True)
+						# Twitch channel is already in database, but not linked to this Discord channel.
+						else:
+							try:
+								sql.add_subscription(targetChannel.id, internal_social_media_channel)
+							except Exception as e:
+								main.logger.error(f"Error adding subscription to database: {e}\n")
+								await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+									ephemeral=True)
+					# Twitch channel is not in database yet, add it.
+					else:
+						internal_social_media_channel = sql.add_social_media_channel("Twitch", twitch_channel_id, twitch_channel_name)
+						try:
+							sql.add_subscription(targetChannel.id, internal_social_media_channel)
+						except Exception as e:
+							main.logger.error(f"Error adding subscription to database: {e}\n")
+							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+								ephemeral=True)
+
+				except Exception as e:
+					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
+						ephemeral=True)
+					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Twitch channel subscription to given channel: {e}\n")
+		except Exception as e:
+			main.logger.error(f"Error subscribing Twitch channel for bot notifications: {e}\n")
 
 
 	@app_commands.command(name="add_youtube_subscription", description="Subscribe a discord channel to receive notifications from a YouTube channel.")

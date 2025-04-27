@@ -1,11 +1,10 @@
 import asyncio
-import functools
-import datetime
 from googleapiclient.discovery import build
 
 import main
 import bot
 import sql
+import reconnect_decorator as reconnect_api_with_backoff
 
 # To note: Youtube API has a quota limit of 10,000 units per day.
 # Activities.list() and PlaylistItems.list() both cost 1 unit per request.
@@ -30,43 +29,11 @@ async def initialize_youtube_client():
 		main.logger.error(f"Failed to initialize Youtube API client: {e}\n")
 		raise
 
-def reconnect_api_with_backoff(max_retries=5, base_delay=2):
-	"""
-	Tries to re-establish given API connection with exponential falloff.
-	"""
-	def decorator(api_func):
-		@functools.wraps(api_func)
-		async def wrapper(*args, **kwargs):
-			attempt = 0
-			while attempt < max_retries:
-				try:
-					return await api_func(*args, **kwargs)
-				except Exception as e:
-					attempt += 1
-					main.logger.warning(f"Youtube API call failed! (attempt {attempt}/{max_retries}): {e}")
-
-					if "quotaExceeded" in str(e) or "403" in str(e):
-						main.logger.critical(f"Bot has exceeded Youtube API quota.")
-						await bot.bot_internal_message("Bot has exceeded Youtube API quota!")
-						return None
-					if attempt == max_retries:
-						main.logger.error(f"Max retries reached. Could not recover API connection.")
-						await bot.bot_internal_message("Bot failed to connect to Youtube API after max retries...")
-
-					wait_time = base_delay * pow(2, attempt - 1)
-					main.logger.info(f"Reinitializing Youtube API client in {wait_time:.2f} seconds...")
-
-					await asyncio.sleep(wait_time)
-					# try to reconnect API
-					await initialize_youtube_client()
-		return wrapper
-	return decorator
-
 #
 #	Youtube API functions, video/livestream/post fetching
 #
 
-@reconnect_api_with_backoff()
+@reconnect_api_with_backoff(initialize_youtube_client, "YouTube")
 async def get_channel_name(channel_id: str) -> str:
 	"""
 	Fetches the public channel name from Youtube API. Used by bot command to verify user input channel ID.
@@ -124,7 +91,7 @@ async def get_channel_handle(channel_id: str) -> str:
 #	Main YT API loop
 #
 
-@reconnect_api_with_backoff()
+@reconnect_api_with_backoff(initialize_youtube_client, "YouTube")
 async def check_for_youtube_activities() -> None:
 	global youtubeClient
 
@@ -252,90 +219,3 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 				item["activity_type"],
 				item["channel_name"],
 				item["video_id"])
-
-# @reconnect_api_with_backoff()
-# async def check_for_youtube_activities() -> None:
-# 	global youtubeClient
-# 
-# 	main.logger.info(f"Starting the Youtube activity sharing task...\n")
-# 	while True:
-# 		try:
-# 			# Fetch all YouTube subscriptions from the database
-# 			youtube_subscriptions = sql.get_all_social_media_subscriptions_for_platform("YouTube")
-# 
-# 			for channel_id in youtube_subscriptions:
-# 
-# 				internal_id = sql.get_id_for_channel_url(channel_id)
-# 				channel_name = sql.get_channel_name(internal_id)
-# 
-# 				try:
-# 					# Fetch the YouTube channel's activities
-# 					request = youtubeClient.activities().list(
-# 						part='snippet',
-# 						channelId=channel_id,
-# 						maxResults=1
-# 					)
-# 					response = request.execute()
-# 					for item in response.get('items', []):
-# 						activity_id = item['id']
-# 						activity_type = item['snippet']['type']
-# 						title = item['snippet']['title']
-# 
-# 						# Handle uploads (fetch video ID if necessary)
-# 						video_id = None
-# 						phase_suffix = ""
-# 
-# 						if activity_type == "upload":
-# 							video_id = item.get("contentDetails", {}).get("upload", {}).get("videoId")
-# 							#video_id = await get_latest_video_from_playlist(channel_id)
-# 							if video_id is None:
-# 								main.logger.error(f"Failed to fetch video ID for activity {activity_id} from playlist!\n")
-# 								continue
-# 
-# 							# Check if the video is a livestream (scheduled or live)
-# 							video_response = youtubeClient.videos().list(
-# 								part='snippet, liveStreamingDetails',
-# 								id=video_id
-# 							).execute()
-# 
-# 							if video_response["items"]:
-# 								video_item = video_response["items"][0]
-# 								live_status = video_item["snippet"].get("liveBroadcastContent", "none")
-# 
-# 								# determine notification type based on live status
-# 								if live_status == "upcoming":
-# 										activity_type = "liveStreamSchedule"
-# 										phase_suffix = "scheduled"
-# 								elif live_status == "live":
-# 										activity_type = "liveStreamNow"
-# 										phase_suffix = "live"
-# 								else:
-# 									activity_type = "upload"
-# 
-# 						# Check if the activity is already notified (factoring in the state of the livestream)
-# 						virtual_id = activity_id + phase_suffix
-# 						if sql.check_post_match(internal_id, virtual_id):
-# 							#main.logger.info(f"Activity {activity_id} already notified for channel {channel_name}.\n")
-# 							continue
-# 
-# 						# Save the activity to the database
-# 						sql.update_latest_post(internal_id, virtual_id, title)
-# 
-# 						# Notify Discord channels subscribed to this YouTube channel
-# 						discord_channels = sql.get_discord_channels_for_social_channel(internal_id)
-# 
-# 						for discord_channel in discord_channels:
-# 							main.logger.info(f"Notifying Discord channel {discord_channel} about new activity...\n")
-# 							await bot.notify_youtube_activity(
-# 								discord_channel,
-# 								activity_type,
-# 								channel_name,
-# 								video_id)
-# 
-# 				except Exception as e:
-# 					main.logger.error(f"Error processing activities for channel {channel_id}: {e}\n")
-# 		except Exception as e:
-# 			main.logger.error(f"Error fetching YouTube subscriptions or processing activities: {e}\n")
-# 
-# 		# Wait for the configured interval before checking again
-# 		await asyncio.sleep(wait_time)

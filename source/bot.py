@@ -6,6 +6,7 @@ import main
 import blsky
 import youtube
 import sql
+import twitch
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -80,6 +81,7 @@ async def load_cogs() -> None:
 async def on_ready() -> None:
 	global bluesky_task
 	global youtube_task
+	global twitch_task
 	# Connect to home (debug) server and channel
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
@@ -106,6 +108,9 @@ async def on_ready() -> None:
 		
 		if youtube_task is None or youtube_task.done():
 			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
+		
+		if twitch_task is None or twitch_task.done():
+			twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
@@ -114,6 +119,7 @@ async def on_ready() -> None:
 async def on_resumed():
 	global bluesky_task
 	global youtube_task
+	global twitch_task
 
 	if bluesky_task is None or bluesky_task.done():
 		try:
@@ -129,11 +135,18 @@ async def on_resumed():
 		except Exception as e:
 			main.logger.error(f"Error resuming Youtube task by Discord bot: {e}\n")
 
+	if twitch_task is None or twitch_task.done():
+		try:
+			twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
+			#await bot_internal_message(f"Bot resumed, spinning twitch task back up again...\n")
+		except Exception as e:
+			main.logger.error(f"Error resuming Twitch task by Discord bot: {e}\n")
 
 @bot.event
 async def on_disconnect():
 	global bluesky_task
 	global youtube_task
+	global twitch_task
 	main.logger.info(f"Bot is disconnecting... cleaning up tasks.\n")
 
 	# cancel Bluesky task if its running
@@ -150,11 +163,19 @@ async def on_disconnect():
 			await youtube_task
 		except asyncio.CancelledError:
 			main.logger.error("Youtube task cancelled.\n")
+	
+	if twitch_task and not twitch_task.done():
+		twitch_task.cancel()
+		try:
+			await twitch_task
+		except asyncio.CancelledError:
+			main.logger.error("Twitch task cancelled.\n")
 
 @bot.event
 async def on_shutdown():
 	global bluesky_task
 	global youtube_task
+	global twitch_task
 	main.logger.info(f"Bot shutdown requested, cleaning up resources...\n")
 
 	# cancel Bluesky task if its running
@@ -171,6 +192,13 @@ async def on_shutdown():
 			await youtube_task
 		except asyncio.CancelledError:
 			main.logger.error("Youtube task cancelled.\n")
+
+	if twitch_task and not twitch_task.done():
+		twitch_task.cancel()
+		try:
+			await twitch_task
+		except asyncio.CancelledError:
+			main.logger.error("Twitch task cancelled.\n")
 
 	await bot.close()
 
@@ -274,5 +302,31 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 
 		except Exception as e:
 			main.logger.info(f"Error sending Bluesky post to channel {channel.name}: {e}\n")
+	else:
+		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
+
+async def notify_twitch_activity(target_channel: str, activity_type: str, channel_name: str, title: str, start_time: str) -> None:
+	channel = await bot.fetch_channel(int(target_channel))
+	if channel and channel.permissions_for(channel.guild.me).send_messages:
+		notify_role = sql.get_notification_role(channel.id)
+		ping_role = ""
+		if notify_role:
+			ping_role = f"<@&{notify_role}> "
+		try:
+			if activity_type == "liveStreamNow":
+				await channel.send(
+					f"{ping_role}**{channel_name} is now live!** 🔴\n"
+					f"Title: {title}\n"
+					f"https://www.twitch.tv/{channel_name}"
+				)
+			elif activity_type == "liveStreamSchedule":
+				await channel.send(
+					f"{ping_role}**{channel_name} just scheduled a new stream!** 🔔\n"
+					f"Title: {title}\n"
+					f"Start time: {start_time}\n"
+					f"https://www.twitch.tv/{channel_name}"
+				)
+		except Exception as e:
+			main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
 	else:
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")

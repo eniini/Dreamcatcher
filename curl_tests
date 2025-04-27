@@ -1,5 +1,0 @@
-curl -X GET "http://79.76.53.111:8000/youtube-webhook?hub.mode=subscribe&hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCIfAvpeIWGHb0duCkMkmm2Q&hub.challenge=test123"
-
-curl -X POST "https://pubsubhubbub.appspot.com/subscribe" -d "hub.mode=subscribe" -d "hub.topic=https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCHxUvAIXHfDzpTW02v7Qarg" -d "hub.callback=http://79.76.53.111:8000/youtube-webhook" -d "hub.verify=async"
-
- curl -X POST http://79.76.53.111:8000/youtube-webhook -H "Content-Type: application/atom+xml" --data-binary "@test_notification.xml"

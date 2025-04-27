@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import logging
 import asyncio
 import signal 
@@ -7,7 +6,6 @@ from dotenv import load_dotenv
 
 import bot
 import blsky
-import web
 import sql
 import youtube
 
@@ -20,12 +18,11 @@ DISCORD_BOT_TOKEN	= os.getenv("DISCORD_BOT_TOKEN")
 YOUTUBE_API_KEY		= os.getenv("YOUTUBE_API_KEY")
 BLUESKY_USERNAME	= os.getenv("BLUESKY_USERNAME")
 BLUESKY_PASSWORD	= os.getenv("BLUESKY_PASSWORD")
+TWITCH_CLIENT_ID	= os.getenv("TWITCH_CLIENT_ID")
+TWITCH_AUTH_TOKEN	= os.getenv("TWITCH_AUTH_TOKEN")
 
 HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
 HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
-
-PUBLIC_WEBHOOK_IP	= os.getenv("PUBLIC_WEBHOOK_IP")
-WEBHOOK_TOKEN		= os.getenv("WEBHOOK_TOKEN")
 
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO)  # Change this to WARNING for production!
@@ -51,7 +48,6 @@ async def main():
 	await youtube.initialize_youtube_client()
 	
 	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
-	asyncio.create_task(web.run_web_server())
 
 	# Create an event to signal shutdown
 	shutdown_event = asyncio.Event()
@@ -70,7 +66,6 @@ async def main():
 
 	# Shutdown tasks
 	await bot.on_shutdown()
-	await web.close_web_server()
 
 def main_entry():
 	# Run the main function
