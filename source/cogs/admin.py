@@ -41,7 +41,7 @@ class Admin(commands.Cog):
 				ephemeral=True)
 			return
 		try:
-			bot.bot_internal_message(f"{sql.read_table_contents()}")
+			await bot.bot_internal_message(f"{sql.read_table_contents()}")
 
 		except Exception as e:
 			await interaction.response.send_message(f"❌ Printing SQL contents failed: {e}",

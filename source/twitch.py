@@ -20,7 +20,7 @@ twitch_auth_token_expires = 0
 async def initialize_twitch_session():
 	global twitch_session
 	if twitch_session is None or twitch_session.closed:
-		twitch_session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False))
+		twitch_session = aiohttp.ClientSession()
 		# check if the session is open
 		if not twitch_session.closed:
 			main.logger.info("Twitch session initialized successfully.\n")
@@ -52,10 +52,11 @@ async def initialize_twitch_auth_token(force_refresh: bool = False) -> str:
 			"grant_type": "client_credentials"
 		}
 
-		async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
+		async with aiohttp.ClientSession() as session:
 			async with session.post(token_url, data=payload) as response:
 				if response.status != 200:
-					raise Exception(f"Twitch API error while fetching token: {response.status}")
+					body = await response.text()
+					raise Exception(f"Twitch API error while fetching token: {response.status} - {body}")
 				token_data = await response.json()
 
 				twitch_auth_token = token_data["access_token"]
