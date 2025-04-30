@@ -25,7 +25,7 @@ class Notifications(commands.Cog):
 		return app_commands.check(predicate)
 
 	# Necessary to update the wait time for the YT API polling loop whenever subscription is added or removed
-	async def update_yt_wait_time():
+	async def update_yt_wait_time(self):
 		new_wait = youtube.calculate_optimal_polling_interval()
 		main.yt_wait_time = new_wait
 		main.wait_time_updated.set()
@@ -92,11 +92,13 @@ class Notifications(commands.Cog):
 							main.logger.error(f"Error adding subscription to database: {e}\n")
 							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 								ephemeral=True)
+
 				except Exception as e:
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Bluesky channel subscription to given channel: {e}\n")
-			
+					return
+		
 			# Everything went ok, confirm to user
 			await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Bluesky channel *{bluesky_channel_id}*!",
 				ephemeral=True)
@@ -167,6 +169,7 @@ class Notifications(commands.Cog):
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding Twitch channel subscription to given channel: {e}\n")
+					return
 				
 				# Everything went ok, confirm to user
 				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for Twitch channel *{twitch_channel_name}*!",
@@ -238,6 +241,7 @@ class Notifications(commands.Cog):
 					await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
 						ephemeral=True)
 					main.logger.error(f"[BOT.COMMAND.ERROR] Error adding YouTube channel subscription to given channel: {e}\n")
+					return
 
 				# Everything went ok, confirm to user
 				await interaction.response.send_message(f"{targetChannel.name} will now receive notifications for YouTube channel *{youtube_channel_name}*!",
@@ -289,7 +293,7 @@ class Notifications(commands.Cog):
 				sql.remove_latest_post(internal_social_media_channel)
 
 				if sql.get_channel_platform(internal_social_media_channel) == "YouTube":
-					self.update_yt_wait_time()
+					await self.update_yt_wait_time()
 
 				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
 
