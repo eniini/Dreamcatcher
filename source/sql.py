@@ -457,10 +457,6 @@ def get_discord_channels_for_social_channel(social_media_channel_id: int):
 		return []
 	try:
 		cursor = conn.cursor()
-		main.logger.info(f"Trying to select all discord channel subscriptions where social_media_channnel_id = {social_media_channel_id}")
-		cursor.execute('SELECT discord_channel_id FROM Subscriptions WHERE social_media_channel_id', (social_media_channel_id,))
-		rows = cursor.fetchall()
-		main.logger.info(f"Matching rows: {rows}")
 		cursor.execute('''
 			SELECT discord_channel_id FROM Subscriptions
 			WHERE social_media_channel_id = ?
