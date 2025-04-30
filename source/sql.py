@@ -25,11 +25,21 @@ def read_table_contents():
 	conn = get_connection()
 	if conn is None:
 		return
-	result_str = ""
+	
+	pd.set_option('display.max_rows', None)
+	pd.set_option('display.max_columns', None)
+	pd.set_option('display.width', 0)
+	pd.set_option('display.max_colwidth', 25)
+
+	result_str = "Active Discord Channels:\n"
 	result_str += (f"{pd.read_sql_query('SELECT * FROM DiscordChannels', conn)}\n")
+	result_str += "\nFollowed Social Media Channels:\n"
 	result_str += (f"{pd.read_sql_query('SELECT * FROM SocialMediaChannels', conn)}\n")
+	result_str += "\nSubscriptions:\n"
 	result_str += (f"{pd.read_sql_query('SELECT * FROM Subscriptions', conn)}\n")
+	result_str += "\nLatest Posts:\n"
 	result_str += (f"{pd.read_sql_query('SELECT * FROM LatestPosts', conn)}\n")
+
 
 	conn.commit()
 	conn.close()

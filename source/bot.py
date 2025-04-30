@@ -53,8 +53,10 @@ async def bot_internal_message(message: str) -> None:
 	try:
 		# The channels are fetched during startup, no need to async call them now
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
-		homeChannel = discord.utils.get(homeGuild.text_channels, id=main.HOME_CHANNEL_ID)
-		await homeChannel.send(f"{message}")
+		if homeGuild:
+			homeChannel = await bot.fetch_channel(main.HOME_CHANNEL_ID)
+			await homeChannel.send(f"{message}")
+
 	except Exception as e:
 		main.logger.error(f"Failed to send a message to the home channel.\n")
 

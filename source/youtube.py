@@ -132,7 +132,7 @@ async def check_for_youtube_activities() -> None:
 
 			for channel_id in youtube_subscriptions:
 				try:
-					main.logger.info(f"Checking channel: {channel_id} for activity...\n")
+					#main.logger.info(f"Checking channel: {channel_id} for activity...\n")
 					activity_info = fetch_latest_youtube_activity(channel_id)
 					if activity_info:
 						pending_notifications.append(activity_info)
@@ -141,10 +141,10 @@ async def check_for_youtube_activities() -> None:
 				except Exception as e:
 					main.logger.error(f"Error processing activities for channel {channel_id}: {e}\n")
 			
-			main.logger.info(f"Batch fetching video metadata...\n")
+			#main.logger.info(f"Batch fetching video metadata...\n")
 			video_metadata_map = batch_fetch_video_metadata(video_ids_to_check)
 
-			main.logger.info(f"processing the notifications...\n")
+			#main.logger.info(f"processing the notifications...\n")
 			await process_youtube_notifications(pending_notifications, video_metadata_map)
 		
 		except Exception as e:
@@ -160,7 +160,7 @@ def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 	internal_id = sql.get_id_for_channel_url(channel_id)
 	channel_name = sql.get_channel_name(internal_id)
 
-	main.logger.info(f"Fetching latest activity for channel: {channel_name}")
+	#main.logger.info(f"Fetching latest activity for channel: {channel_name}")
 	response = youtubeClient.activities().list(
 		part="snippet, contentDetails",
 		channelId=channel_id,
@@ -168,7 +168,7 @@ def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 	).execute()
 
 	for item in response.get("items", []):
-		main.logger.info(f"Latest activity: {item}")
+		#main.logger.info(f"Latest activity: {item}")
 		activity_type = item["snippet"]["type"]
 		activity_id = item["id"]
 		title = item["snippet"]["title"]
