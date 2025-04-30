@@ -12,7 +12,32 @@ from reconnect_decorator import reconnect_api_with_backoff
 # edit: the video/livestream details are fetched in a batch request, so the cost is 1 unit for 50 video IDs.
 # this means that the soft cap for YT channels to monitor is roughly 300 channels.
 
-wait_time = 60  # default wait time between checks, in seconds
+def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.05) -> int:
+	"""
+	Calculates the optimal polling interval (in seconds) to stay under the YouTube API daily quota.
+
+	Args:
+		channel_count (int): Number of YouTube channels being monitored.
+		quota_limit (int): Total daily quota limit (default is 10,000).
+		quota_buffer (float): Fractional buffer to leave unused (default 0.05 = 5%).
+
+	Returns:
+		int: Optimal number of seconds to wait between polling cycles.
+	"""
+	# Leave a buffer to avoid accidental overuse
+	max_quota_usage = quota_limit * (1 - quota_buffer)
+
+	# Each cycle uses 1 activity + 1 batched video call (treated as a single extra call)
+	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + 1
+
+	# Max cycles per day
+	max_cycles_per_day = max_quota_usage // quota_per_cycle
+
+	# Seconds per day / cycles per day = wait time
+	seconds_per_day = 24 * 60 * 60
+	optimal_interval = int(seconds_per_day // max_cycles_per_day)
+
+	return max(optimal_interval, 60)  # Minimum 60 seconds to avoid unecessary aggressive polling
 
 #
 #	API initialization
@@ -94,6 +119,9 @@ async def check_for_youtube_activities() -> None:
 	global youtubeClient
 
 	main.logger.info(f"Starting the Youtube activity sharing task...\n")
+
+	wait_time = calculate_optimal_polling_interval()
+
 	while True:
 		try:
 			# Fetch all Youtube subscriptions from the database
@@ -104,6 +132,7 @@ async def check_for_youtube_activities() -> None:
 
 			for channel_id in youtube_subscriptions:
 				try:
+					main.logger.info(f"Checking channel: {channel_id} for activity...\n")
 					activity_info = fetch_latest_youtube_activity(channel_id)
 					if activity_info:
 						pending_notifications.append(activity_info)
@@ -112,8 +141,10 @@ async def check_for_youtube_activities() -> None:
 				except Exception as e:
 					main.logger.error(f"Error processing activities for channel {channel_id}: {e}\n")
 			
+			main.logger.info(f"Batch fetching video metadata...\n")
 			video_metadata_map = batch_fetch_video_metadata(video_ids_to_check)
 
+			main.logger.info(f"processing the notifications...\n")
 			await process_youtube_notifications(pending_notifications, video_metadata_map)
 		
 		except Exception as e:
@@ -129,16 +160,18 @@ def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 	internal_id = sql.get_id_for_channel_url(channel_id)
 	channel_name = sql.get_channel_name(internal_id)
 
+	main.logger.info(f"Fetching latest activity for channel: {channel_name}")
 	response = youtubeClient.activities().list(
-		part='snippet, contentDetails',
+		part="snippet, contentDetails",
 		channelId=channel_id,
 		maxResults=1
 	).execute()
 
-	for item in response.get('items', []):
-		activity_type = item['snippet']['type']
-		activity_id = item['id']
-		title = item['snippet']['title']
+	for item in response.get("items", []):
+		main.logger.info(f"Latest activity: {item}")
+		activity_type = item["snippet"]["type"]
+		activity_id = item["id"]
+		title = item["snippet"]["title"]
 		video_id = item.get("contentDetails", {}).get("upload", {}).get("videoId")
 
 		if activity_type != "upload" or not video_id:
@@ -168,14 +201,40 @@ def batch_fetch_video_metadata(video_ids: set[str]) -> dict:
 	for i in range(0, len(video_ids), 50):
 		batch_video_ids = video_ids[i:i + 50]
 		response = youtubeClient.videos().list(
-			part='snippet, liveStreamingDetails',
+			part="snippet, liveStreamingDetails",
 			id=','.join(batch_video_ids)
 		).execute()
 
+		for vid in batch_video_ids:
+			video_metadata_map[vid] = {
+				"item": None,
+				"unavailable": True,
+				"is_members_only": False} # default to unavailable
+
 		for item in response.get('items', []):
-			video_metadata_map[item['id']] = item
+			vid = item['id']
+			video_metadata_map[vid] = {
+				"item": item,
+				"unavailable": False,
+				"is_members_only": detect_members_only(item),
+			}
 
 	return video_metadata_map
+
+def detect_members_only(item: dict) -> bool:
+	snippet = item.get("snippet", {})
+	status = item.get("status", {})
+
+	# members-only detection logic
+	if status.get("privacyStatus") == "private":
+		return True
+	if snippet.get("title") or not snippet.get("thumbnails"):
+		return False
+	if "members" in snippet.get("description", "").lower():
+		return True
+	
+	main.logger.info(f"Members-only detection failed for video: {item['id']}")
+	return False
 
 async def process_youtube_notifications(pending_notifications: list[dict], video_metadata_map: dict) -> None:
 	"""
@@ -184,36 +243,47 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 	for item in pending_notifications:
 		video_id = item["video_id"]
 		video_data = video_metadata_map.get(video_id)
+		members_only = False
+		title = ""
 
 		phase_suffix = ""
 		if video_data:
-			live_status = video_data["snippet"].get("liveBroadcastContent", "none")
 
-			# determine notification type based on live status
-			if live_status == "upcoming":
-				item["activity_type"] = "liveStreamSchedule"
-				phase_suffix = "scheduled"
-			elif live_status == "live":
-				item["activity_type"] = "liveStreamNow"
-				phase_suffix = "live"
+			if video_data.get("unavailable") or video_data.get("is_members_only"):
+				bot.bot_internal_message("**members only video detected!**")
+				members_only = True
+
 			else:
-				# check if we already notified this video as a livestream
-				previously_notified_id = item["activity_id"] + "live"
-				if sql.check_post_match(item["internal_id"], previously_notified_id):
-					# livestream of this was already notified, skip notifying as upload
-					continue
-				# otherwise notify
-				item["activity_type"] = "upload"
+				snippet = video_data["item"].get("snippet", {})
+				live_status = snippet.get("liveBroadcastContent", "none")
+				title = item["title"]
+					
+				# determine notification type based on live status
+				if live_status == "upcoming":
+					item["activity_type"] = "liveStreamSchedule"
+					phase_suffix = "scheduled"
+				elif live_status == "live":
+					item["activity_type"] = "liveStreamNow"
+					phase_suffix = "live"
+				else:
+					# check if we already notified this video as a livestream
+					previously_notified_id = item["activity_id"] + "live"
+					if sql.check_post_match(item["internal_id"], previously_notified_id):
+						# livestream of this was already notified, skip notifying as upload
+						continue
+					# otherwise notify
+					item["activity_type"] = "upload"
 		
 		virtual_id = item["activity_id"] + phase_suffix
 		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
 
-		sql.update_latest_post(item["internal_id"], virtual_id, item["title"])
+		sql.update_latest_post(item["internal_id"], virtual_id, title)
 
 		for discord_channel in item["discord_channels"]:
 			await bot.notify_youtube_activity(
 				discord_channel,
 				item["activity_type"],
 				item["channel_name"],
-				item["video_id"])
+				item["video_id"],
+				members_only)

@@ -24,7 +24,13 @@ class Notifications(commands.Cog):
 			return True
 		return app_commands.check(predicate)
 
-
+	# Necessary to update the wait time for the YT API polling loop whenever subscription is added or removed
+	async def update_yt_wait_time():
+		new_wait = youtube.calculate_optimal_polling_interval()
+		main.yt_wait_time = new_wait
+		main.wait_time_updated.set()
+		main.wait_time_updated.clear()
+		main.logger.info(f"Updated YouTube wait time to {main.yt_wait_time} seconds.\n")
 
 	@app_commands.command(name="add_bluesky_subscription", description="Subscribe a discord channel to receive notifications from a Bluesky profile.")
 	@app_commands.describe(bluesky_channel_id="The ID of the Bluesky profile. This is usually in the format of 'username.bsky.social'", channel="Optional: The Discord text channel to unsubscribe. Defaults to current.")
@@ -222,6 +228,7 @@ class Notifications(commands.Cog):
 						internal_social_media_channel = sql.add_social_media_channel("YouTube", youtube_channel_id, youtube_channel_name)
 						try:
 							sql.add_subscription(targetChannel.id, internal_social_media_channel)
+							await self.update_yt_wait_time()
 						except Exception as e:
 							main.logger.error(f"Error adding subscription to database: {e}\n")
 							await interaction.response.send_message(f"Command failed due to an internal error. Please try again later.",
@@ -247,7 +254,7 @@ class Notifications(commands.Cog):
 	@app_commands.default_permissions(manage_guild=True)	# Hides command from users without this permission
 	@app_commands.checks.has_permissions(manage_guild=True)	# Checks if the user has the manage_guild permission
 	@text_channel_only()
-	async def unsubscribe_channel(self, interaction: discord.Interaction, social_media_channel: Optional[str]=None, channel: discord.TextChannel=None):
+	async def unsubscribe_channel(self, interaction: discord.Interaction, social_media_channel: str, channel: discord.TextChannel=None):
 		try:
 			# if no given channel, defaults to the context
 			if channel is None:
@@ -274,23 +281,16 @@ class Notifications(commands.Cog):
 				else:
 					await interaction.response.send_message(f"No subscription found for {target_social_media_name} in {targetChannel.name}.",
 						ephemeral=True)
-			else:
-				# If no social_media_channel is provided, remove all subscriptions
-				main.logger.info(f"Checking for all active subscriptions for channel {targetChannel.name}...\n")
-				subscriptions = sql.list_social_media_subscriptions_for_discord_channel(targetChannel.id, "Youtube")
-				if subscriptions:
-					main.logger.info(f"Removing all active subscriptions for channel {targetChannel.name}...\n")
-					sql.remove_subscription(targetChannel.id, None)
-					await interaction.response.send_message(f"All channel {targetChannel.name} subscriptions for YouTube channels removed.",
-						ephemeral=True)
-				else:
-					await interaction.response.send_message(f"No YouTube channel subscriptions found for {targetChannel.name}.",
-						ephemeral=True)
 
 			# Cleanup, If no Discord channels are subscribed to the social media channel, remove it from the database
 			if sql.get_discord_channels_for_social_channel(internal_social_media_channel) is None:
+
 				sql.remove_social_media_channel(internal_social_media_channel)
 				sql.remove_latest_post(internal_social_media_channel)
+
+				if sql.get_channel_platform(internal_social_media_channel) == "YouTube":
+					self.update_yt_wait_time()
+
 				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
 
 		except Exception as e:

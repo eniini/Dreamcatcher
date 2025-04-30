@@ -22,8 +22,8 @@ BLUESKY_PASSWORD		= os.getenv("BLUESKY_PASSWORD")
 TWITCH_CLIENT_ID		= os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET	= os.getenv("TWITCH_CLIENT_SECRET")
 
-HOME_SERVER_ID		= int(os.getenv("HOME_SERVER_ID"))
-HOME_CHANNEL_ID		= int(os.getenv("HOME_CHANNEL_ID"))
+HOME_SERVER_ID			= int(os.getenv("HOME_SERVER_ID"))
+HOME_CHANNEL_ID			= int(os.getenv("HOME_CHANNEL_ID"))
 
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO)  # Change this to WARNING for production!
@@ -35,6 +35,9 @@ httpx_logger.setLevel(logging.WARNING)
 
 # Set to store notified streams to avoid duplicate notifications
 notified_streams = set()
+
+yt_wait_time = 60  # default
+wait_time_updated = asyncio.Event()
 
 async def main():
 	try:

@@ -354,6 +354,27 @@ def is_discord_channel_subscribed(discord_channel_id, social_media_channel_id):
 	finally:
 		conn.close()
 
+def get_channel_platform(channel_id):
+	"""
+	Find the matching id in SocialMediaChannels table and return the saved platform
+	"""
+	conn = get_connection()
+	if conn is None:
+		return None
+	try:
+		cursor = conn.cursor()
+		cursor.execute('''
+			SELECT platform FROM SocialMediaChannels
+			WHERE id = ?
+		''', (channel_id,))
+		row = cursor.fetchone()
+		return row['platform'] if row else None
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting channel platform: {e}")
+		return None
+	finally:
+		conn.close()
+
 def get_channel_url(channel_id):
 	"""
 	Find the matching id in SocialMediaChannels table and return the saved external_url

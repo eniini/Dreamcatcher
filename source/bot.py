@@ -209,7 +209,7 @@ async def on_shutdown():
 #	Discord bot notification functions
 #
 
-async def notify_youtube_activity(target_channel: str, activity_type: str, channel_name: str, video_id: str) -> None:
+async def notify_youtube_activity(target_channel: str, activity_type: str, channel_name: str, video_id: str, members_only: bool=False) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		# Use channel.id instead of channel.guild.id
