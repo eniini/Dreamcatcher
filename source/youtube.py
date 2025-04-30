@@ -86,7 +86,7 @@ async def get_channel_handle(channel_id: str) -> str:
 	global youtubeClient
 
 	if not channel_id or not channel_id.startswith("UC"):
-		main.logger.error(f"Invalid channel ID: {channel_id}.\n")
+		main.logger.info(f"Invalid channel ID: {channel_id}.\n")
 		return None
 
 	try:
@@ -105,10 +105,13 @@ async def get_channel_handle(channel_id: str) -> str:
 			elif "customUrl" in item["snippet"] and item["snippet"]["customUrl"].startswith("@"):
 				handle = item["snippet"]["customUrl"]
 			return handle
+		else:
+			main.logger.info(f"No content found for channel ID: {channel_id}...\n")
+			return None
 
 	except Exception as e:
-		main.logger.error(f"Error fetching channel handle: {e}")
-	return None
+		main.logger.error(f"Error generating request for channel handle: {e}")
+		raise
 
 #
 #	Main YT API loop

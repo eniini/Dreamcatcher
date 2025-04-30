@@ -327,10 +327,6 @@ def remove_subscription(discord_channel_id, social_media_channel_id=None):
 		return
 	try:
 		cursor = conn.cursor()
-		main.logger.info(f"Trying to delete where social_media_channnel_id = {social_media_channel_id} and discord_channel_id = {discord_channel_id}")
-		cursor.execute('SELECT * FROM Subscriptions WHERE social_media_channel_id = ? AND discord_channel_id = ?', (social_media_channel_id, discord_channel_id))
-		rows = cursor.fetchall()
-		main.logger.info(f"Matching rows before delete: {rows}")
 		if social_media_channel_id is not None:
 			cursor.execute('DELETE FROM Subscriptions WHERE social_media_channel_id = ? AND discord_channel_id = ?', (social_media_channel_id, discord_channel_id))
 		else:
@@ -461,6 +457,10 @@ def get_discord_channels_for_social_channel(social_media_channel_id: int):
 		return []
 	try:
 		cursor = conn.cursor()
+		main.logger.info(f"Trying to select all discord channel subscriptions where social_media_channnel_id = {social_media_channel_id}")
+		cursor.execute('SELECT discord_channel_id FROM Subscriptions WHERE social_media_channel_id', (social_media_channel_id,))
+		rows = cursor.fetchall()
+		main.logger.info(f"Matching rows: {rows}")
 		cursor.execute('''
 			SELECT discord_channel_id FROM Subscriptions
 			WHERE social_media_channel_id = ?

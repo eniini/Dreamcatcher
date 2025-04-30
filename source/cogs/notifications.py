@@ -296,6 +296,8 @@ class Notifications(commands.Cog):
 					await self.update_yt_wait_time()
 
 				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
+			else:
+				main.logger.info(f"Active subscriptions for {target_social_media_name} found. Not removing from database...\n")
 
 		except Exception as e:
 			main.logger.error(f"Error unsubscribing Discord channel from YouTube notifications: {e}\n")
