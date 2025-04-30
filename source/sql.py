@@ -257,16 +257,16 @@ def add_social_media_channel(platform, external_url, channel_name):
 	finally:
 		conn.close()
 
-def remove_social_media_channel(row_id):
+def remove_social_media_channel(social_media_channel_id):
 	"""
-	Remove a discord channel given its row id.
+	Remove a discord channel given its id.
 	"""
 	conn = get_connection()
 	if conn is None:
 		return
 	try:
 		cursor = conn.cursor()
-		cursor.execute('DELETE FROM SocialMediaChannels WHERE id = ?', (row_id,))
+		cursor.execute('DELETE FROM SocialMediaChannels WHERE id = ?', (social_media_channel_id,))
 		conn.commit()
 	except sqlite3.Error as e:
 		main.logger.error(f"Error removing social media channel: {e}")
@@ -470,7 +470,7 @@ def get_discord_channels_for_social_channel(social_media_channel_id: int):
 		return [row['discord_channel_id'] for row in rows]
 	except sqlite3.Error as e:
 		main.logger.error(f"Error getting discord channels: {e}")
-		return []
+		return None
 	finally:
 		conn.close()
 

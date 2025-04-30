@@ -284,7 +284,7 @@ class Notifications(commands.Cog):
 
 			# Cleanup, If no Discord channels are subscribed to the social media channel, remove it from the database
 			if sql.get_discord_channels_for_social_channel(internal_social_media_channel) is None:
-
+				main.logger.info(f"No active subscriptions for {target_social_media_name} found. Removing from database...\n")
 				sql.remove_social_media_channel(internal_social_media_channel)
 				sql.remove_latest_post(internal_social_media_channel)
 
