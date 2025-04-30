@@ -1,6 +1,7 @@
 import discord
 import asyncio
 from discord.ext import commands
+from io import StringIO
 
 import main
 import blsky
@@ -55,7 +56,15 @@ async def bot_internal_message(message: str) -> None:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
 		if homeGuild:
 			homeChannel = await bot.fetch_channel(main.HOME_CHANNEL_ID)
-			await homeChannel.send(f"{message}")
+
+			if len(message) > 2000:
+				# message longer than Discord's limit, send as a file
+				buffer = StringIO()
+				buffer.write(message)
+				buffer.seek(0)
+				await homeChannel.send(file=discord.File(buffer, filename="message.txt"))
+			else:
+				await homeChannel.send(f"{message}")
 
 	except Exception as e:
 		main.logger.error(f"Failed to send a message to the home channel.\n")
