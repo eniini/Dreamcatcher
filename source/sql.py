@@ -317,18 +317,22 @@ def add_subscription(discord_channel_id, social_media_channel_id):
 	finally:
 		conn.close()
 
-def remove_subscription(discord_channel_id, subscription_id=None):
+def remove_subscription(discord_channel_id, social_media_channel_id=None):
 	"""
-	Remove a social media subscription from Discord channel given its subscription_id.
-	If subscription_id is None, recursively remove all social media subscriptions for the given discord channel.
+	Remove a social media subscription from Discord channel given its social_media_channel_id.
+	If social_media_channel_id is None, recursively remove all social media subscriptions for the given discord channel.
 	"""
 	conn = get_connection()
 	if conn is None:
 		return
 	try:
 		cursor = conn.cursor()
-		if subscription_id is not None:
-			cursor.execute('DELETE FROM Subscriptions WHERE id = ? AND discord_channel_id = ?', (subscription_id, discord_channel_id))
+		main.logger.info(f"Trying to delete where social_media_channnel_id = {social_media_channel_id} and discord_channel_id = {discord_channel_id}")
+		cursor.execute('SELECT * FROM Subscriptions WHERE social_media_channel_id = ? AND discord_channel_id = ?', (social_media_channel_id, discord_channel_id))
+		rows = cursor.fetchall()
+		main.logger.info(f"Matching rows before delete: {rows}")
+		if social_media_channel_id is not None:
+			cursor.execute('DELETE FROM Subscriptions WHERE social_media_channel_id = ? AND discord_channel_id = ?', (social_media_channel_id, discord_channel_id))
 		else:
 			cursor.execute('DELETE FROM Subscriptions WHERE discord_channel_id = ?', (discord_channel_id,))
 		conn.commit()
