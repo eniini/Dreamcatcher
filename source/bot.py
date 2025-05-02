@@ -116,11 +116,10 @@ async def on_ready() -> None:
 		# Start the Bluesky post sharing task
 		if bluesky_task is None or bluesky_task.done():
 			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
-			#bluesky_task = bot.loop.create_task(blsky.share_bluesky_posts())
-		
+
 		if youtube_task is None or youtube_task.done():
 			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
-		
+
 		if twitch_task is None or twitch_task.done():
 			twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
 
@@ -236,7 +235,7 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 					f"{ping_role}**{channel_name} just uploaded a new video!** 💭\n"
 					f"{video_url}"
 				)
-			elif activity_type == "liveStreamSchedule":
+			elif activity_type == "liveStreamScheduled":
 				await channel.send(
 					f"{ping_role}**{channel_name} just scheduled a new stream!** 🔔\n"
 					f"{video_url}"
@@ -330,13 +329,6 @@ async def notify_twitch_activity(target_channel: str, activity_type: str, channe
 			if activity_type == "liveStreamNow":
 				await channel.send(
 					f"{ping_role}**{channel_name} is now live!** 🔴\n"
-					f"https://www.twitch.tv/{channel_name}"
-				)
-			elif activity_type == "liveStreamSchedule":
-				await channel.send(
-					f"{ping_role}**{channel_name} just scheduled a new stream!** 🔔\n"
-					f"Title: {title}\n"
-					f"Start time: {start_time}\n"
 					f"https://www.twitch.tv/{channel_name}"
 				)
 		except Exception as e:
