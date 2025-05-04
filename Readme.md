@@ -34,7 +34,4 @@ Locally hosted Discord bot for keeping up with content creator's socials and str
 	- Run the bot with either:
 		`python source/main.py` or `./dreamcatcher`
 	- use `/Sync` command to synchronize bot's slash commands with discord.
-	- use available slash commands to define bot activity:
-		`/subscribe_[platform]_channel` to subscribe the specified channel to receive notifications for activity by the given social media channel.
-		`/add_notification_role` to specify a Discord role which will be notified whenever new content is shared
-		
+	- use available slash commands to define bot activity.
