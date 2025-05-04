@@ -16,9 +16,10 @@ intents.message_content = True # allow bot to read message content
 bot = commands.Bot(command_prefix=commands.when_mentioned_or(), intents=intents)
 bot.remove_command("help") # remove default help command
 
-# track the bluesky/youtube task so we can cancel it
+# track the media platform tasks so we can cancel them on shutdown
 bluesky_task = None
 youtube_task = None
+youtube_members_only_task = None
 twitch_task = None
 
 #
@@ -93,7 +94,9 @@ async def load_cogs() -> None:
 async def on_ready() -> None:
 	global bluesky_task
 	global youtube_task
+	global youtube_members_only_task
 	global twitch_task
+
 	# Connect to home (debug) server and channel
 	try:
 		homeGuild = discord.utils.get(bot.guilds, id=main.HOME_SERVER_ID)
@@ -115,13 +118,18 @@ async def on_ready() -> None:
 
 		# Start the Bluesky post sharing task
 		if bluesky_task is None or bluesky_task.done():
-			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
+			#bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
+			pass
 
 		if youtube_task is None or youtube_task.done():
 			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
 
+		if youtube_members_only_task is None or youtube_members_only_task.done():
+			youtube_members_only_task = asyncio.create_task(youtube.check_for_members_only_youtube_activity())
+
 		if twitch_task is None or twitch_task.done():
-			twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
+			#twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
+			pass
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")
@@ -130,6 +138,7 @@ async def on_ready() -> None:
 async def on_resumed():
 	global bluesky_task
 	global youtube_task
+	global youtube_members_only_task
 	global twitch_task
 
 	if bluesky_task is None or bluesky_task.done():
@@ -145,6 +154,13 @@ async def on_resumed():
 			#await bot_internal_message(f"Bot resumed, spinning youtube task back up again...\n")
 		except Exception as e:
 			main.logger.error(f"Error resuming Youtube task by Discord bot: {e}\n")
+	
+	if youtube_members_only_task is None or youtube_members_only_task.done():
+		try:
+			youtube_members_only_task = asyncio.create_task(youtube.check_for_members_only_youtube_activity())
+			#await bot_internal_message(f"Bot resumed, spinning youtube members only task back up again...\n")
+		except Exception as e:
+			main.logger.error(f"Error resuming Youtube members only task by Discord bot: {e}\n")
 
 	if twitch_task is None or twitch_task.done():
 		try:
@@ -157,7 +173,9 @@ async def on_resumed():
 async def on_disconnect():
 	global bluesky_task
 	global youtube_task
+	global youtube_members_only_task
 	global twitch_task
+
 	main.logger.info(f"Bot is disconnecting... cleaning up tasks.\n")
 
 	# cancel Bluesky task if its running
@@ -167,14 +185,21 @@ async def on_disconnect():
 			await bluesky_task
 		except asyncio.CancelledError:
 			main.logger.error("Bluesky task cancelled.\n")
-	
+
 	if youtube_task and not youtube_task.done():
 		youtube_task.cancel()
 		try:
 			await youtube_task
 		except asyncio.CancelledError:
 			main.logger.error("Youtube task cancelled.\n")
-	
+
+	if youtube_members_only_task and not youtube_members_only_task.done():
+		youtube_members_only_task.cancel()
+		try:
+			await youtube_members_only_task
+		except asyncio.CancelledError:
+			main.logger.error("Youtube members only task cancelled.\n")
+
 	if twitch_task and not twitch_task.done():
 		twitch_task.cancel()
 		try:
@@ -186,7 +211,9 @@ async def on_disconnect():
 async def on_shutdown():
 	global bluesky_task
 	global youtube_task
+	global youtube_members_only_task
 	global twitch_task
+
 	main.logger.info(f"Bot shutdown requested, cleaning up resources...\n")
 
 	# cancel Bluesky task if its running
@@ -203,6 +230,13 @@ async def on_shutdown():
 			await youtube_task
 		except asyncio.CancelledError:
 			main.logger.error("Youtube task cancelled.\n")
+
+	if youtube_members_only_task and not youtube_members_only_task.done():
+		youtube_members_only_task.cancel()
+		try:
+			await youtube_members_only_task
+		except asyncio.CancelledError:
+			main.logger.error("Youtube members only task cancelled.\n")
 
 	if twitch_task and not twitch_task.done():
 		twitch_task.cancel()
@@ -230,6 +264,7 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 			ping_role = f"<@&{notify_role}> "
 		try:
 			video_url = f"https://www.youtube.com/watch?v={video_id}"
+
 			if activity_type == "upload":
 				await channel.send(
 					f"{ping_role}**{channel_name} just uploaded a new video!** 💭\n"
@@ -244,7 +279,7 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 				await channel.send(
 					f"{ping_role}**{channel_name} is now live!** 🔴\n"
 					f"{video_url}"
-				)	
+				)
 		except Exception as e:
 			main.logger.error(f"Error sending message to channel {channel.name}: {e}\n")
 	else:

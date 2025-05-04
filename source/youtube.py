@@ -30,7 +30,7 @@ def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: f
 	max_quota_usage = quota_limit * (1 - quota_buffer)
 
 	# Each cycle uses 1 activity + 1 batched video call (treated as a single extra call)
-	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + 1
+	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + len(sql.get_all_social_media_subscriptions_for_platform("YouTube_members")) + 1
 
 	# Max cycles per day
 	max_cycles_per_day = max_quota_usage // quota_per_cycle
@@ -209,23 +209,14 @@ def batch_fetch_activity_metadata(video_ids: set[str]) -> dict:
 		for vid in batch_video_ids:
 			video_metadata_map[vid] = {
 				"item": None,
-				"unavailable": True,
-				"is_members_only": False,
 				"status": "unavailable"}
 
 		for item in response.get('items', []):
 
-			#main.logger.info(json.dumps(item, indent=2))
-
 			vid = item['id']
 			snippet = item.get("snippet", {})
-			status = item.get("status", {})
 
 			live_status = snippet.get("liveBroadcastContent", "none").lower()
-
-			is_private = status.get("privacyStatus") == "private"
-			description = snippet.get("description", "").lower()
-			is_members_only = is_private or ("members" in description)
 
 			if live_status == "upcoming":
 				detected_status = "liveStreamScheduled"
@@ -233,11 +224,11 @@ def batch_fetch_activity_metadata(video_ids: set[str]) -> dict:
 				detected_status = "liveStreamNow"
 			else:
 				detected_status = "upload"
+
+			main.logger.info(f"[{detected_status}] -> {snippet.get("title")}\n")
 			
 			video_metadata_map[vid] = {
 				"item": item,
-				"unavailable": False,
-				"is_members_only": is_members_only,
 				"status": detected_status
 			}
 	return video_metadata_map
@@ -253,10 +244,8 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		members_only = False
 		phase_suffix = ""
 
-		if video_data.get("unavailable") or video_data.get("is_members_only"):
-			bot.bot_internal_message("**members only video detected!**")
+		if item["activity_type"] == "membersOnlyContent":
 			members_only = True
-			continue # Skip notifying if the video is unavailable or members only
 
 		# get final status classification
 		detected_status = video_data.get("status")
@@ -272,18 +261,18 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 			if sql.check_post_match(item["internal_id"], previously_notified_id):
 				# livestream of this was already notified, skip notifying as upload
 				continue
-		
+
 		virtual_id = item["activity_id"] + phase_suffix
 		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
 
 		sql.update_latest_post(item["internal_id"], virtual_id, title)
 
-		main.logger.info(f"New activity detected for channel {item['channel_name']} ({item['internal_id']})\n")
-		main.logger.info(f"Activity type: {detected_status}\n")
-		main.logger.info(f"Video ID: {video_id}\n")
-		main.logger.info(f"Video title: {title}\n")
-		main.logger.info(f"members only: {members_only}\n")
+		main.logger.info(f"New activity detected for channel {item['channel_name']} ({item['internal_id']})")
+		main.logger.info(f"Activity type: {detected_status}")
+		main.logger.info(f"Video ID: {video_id}")
+		main.logger.info(f"Video title: {title}")
+		main.logger.info(f"members only: {members_only}")
 
 		for discord_channel in item["discord_channels"]:
 			await bot.notify_youtube_activity(
@@ -292,3 +281,79 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 				item["channel_name"],
 				item["video_id"],
 				members_only)
+
+#
+#	Youtube Members-Only activity loop
+#
+
+@reconnect_api_with_backoff(initialize_youtube_client, "YouTube")
+async def check_for_members_only_youtube_activity() -> None:
+	global youtubeClient
+
+	main.logger.info(f"Starting the Members-Only Youtube activity sharing task...\n")
+
+	wait_time = calculate_optimal_polling_interval()
+
+	while True:
+		try:
+			youtube_subscriptions = sql.get_all_social_media_subscriptions_for_platform("YouTube_members")
+
+			pending_notifications = []
+			video_ids_to_check = []
+
+			for channel_url in youtube_subscriptions:
+				internal_id = sql.get_id_for_channel_url(channel_url, "YouTube_members")
+				channel_name = sql.get_channel_name(internal_id)
+
+				try:
+					members_only_videos = fetch_latest_members_only_content(channel_url, 1)
+
+					for video_id in members_only_videos:
+
+						if sql.check_post_match(internal_id, video_id):
+							continue  # already processed
+
+						pending_notifications.append({
+							"internal_id": internal_id,
+							"channel_name": channel_name,
+							"activity_id": video_id,
+							"title": "(unknown title - resolving)",
+							"activity_type": "membersOnlyContent",
+							"video_id": video_id,
+							"discord_channels": sql.get_discord_channels_for_social_channel(internal_id)
+						})
+						video_ids_to_check.append(video_id)
+
+				except Exception as e:
+					main.logger.error(f"Error checking members-only playlist for {channel_name}: {e}\n")
+
+			video_metadata_map = batch_fetch_activity_metadata(set(video_ids_to_check))
+			
+			await process_youtube_notifications(pending_notifications, video_metadata_map)
+
+		except Exception as e:
+			main.logger.error(f"Error inside members-only Youtube activity loop: {e}\n")
+
+		await asyncio.sleep(wait_time)
+
+def fetch_latest_members_only_content(channel_url: str, number_of_items: 1) -> list[str]:
+	"""
+	Fetches latest activity ID(s) from given channel's members-only playlist.
+	"""
+	global youtubeClient
+	playlist_id = "UUMO" + channel_url[2:]  # Transform UCxxxx → UUMOxxxx
+
+	video_ids = []
+
+	response = youtubeClient.playlistItems().list(
+		part="contentDetails",
+		playlistId=playlist_id,
+		maxResults=number_of_items,
+	).execute()
+
+	for item in response.get("items", []):
+		video_id = item["contentDetails"].get("videoId")
+		if video_id:
+			video_ids.append(video_id)
+
+	return video_ids

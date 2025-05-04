@@ -427,19 +427,26 @@ def get_channel_name(channel_id):
 	finally:
 		conn.close()
 
-def get_id_for_channel_url(external_url):
+def get_id_for_channel_url(external_url, platform:str|None=None):
 	"""
 	Get the matching Subscription id for given socialMediaChannel url if a subscription for it exists.
+	Takes an optional platform parameter to filter results by the given platform.
 	"""
 	conn = get_connection()
 	if conn is None:
 		return None
 	try:
 		cursor = conn.cursor()
-		cursor.execute('''
-			SELECT id FROM SocialMediaChannels
-			WHERE external_url = ?
-		''', (external_url,))
+		if platform is not None:
+			cursor.execute('''
+				SELECT id FROM SocialMediaChannels
+				WHERE external_url = ? AND platform = ?
+			''', (external_url, platform))
+		else:
+			cursor.execute('''
+				SELECT id FROM SocialMediaChannels
+				WHERE external_url = ?
+			''', (external_url,))
 		row = cursor.fetchone()
 		return int(row['id']) if row else None
 	except sqlite3.Error as e:
