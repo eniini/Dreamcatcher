@@ -118,8 +118,7 @@ async def on_ready() -> None:
 
 		# Start the Bluesky post sharing task
 		if bluesky_task is None or bluesky_task.done():
-			#bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
-			pass
+			bluesky_task = asyncio.create_task(blsky.share_bluesky_posts())
 
 		if youtube_task is None or youtube_task.done():
 			youtube_task = asyncio.create_task(youtube.check_for_youtube_activities())
@@ -128,8 +127,7 @@ async def on_ready() -> None:
 			youtube_members_only_task = asyncio.create_task(youtube.check_for_members_only_youtube_activity())
 
 		if twitch_task is None or twitch_task.done():
-			#twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
-			pass
+			twitch_task = asyncio.create_task(twitch.check_for_twitch_activities())
 
 	except Exception as e:
 		main.logger.error(f"Error connecting to home server: {e}\n")

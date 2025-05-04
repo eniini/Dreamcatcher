@@ -3,11 +3,17 @@
 Locally hosted Discord bot for keeping up with content creator's socials and streams.
 
 ## Features
-- Active YouTube and Bluesky monitoring that respects API quotas
-- SQLite Database for content tracking
+- Scalable real-time YouTube, Twitch and Bluesky channel activity monitoring that respects API quotas
+- SQLite Database for content tracking and managing multi-server functionality.
+- Individual Discord channel settings
+
+## Design Highlights
+- Fully asynchronous
+- Modern Discord bot features using cogs and slash commands
+- Error handling with retry/backoff for failed API calls
 
 ## Prerequisites
-- Bluesky, Discord and Google accounts
+- Discord, Google and Twitch Developer access
 - Python 3.8+
 - pip
 
@@ -15,18 +21,20 @@ Locally hosted Discord bot for keeping up with content creator's socials and str
 1. Setup Discord Bot:
 	- Create a new application inside [Discord Developer Portal](https://discord.com/developers/applications)
 	- Save generated bot token to the `.env` file (use `.env.example` as reference)
-	- Set up a new Discord server for your bot's development, then use OAuth2 tab to generate a link for adding the bot to the created channel.
-2. Setup Youtube API:
+	- Set up a new Discord server for your bot's development/home channel.
+2. Setup API accesses:
 	- Create New [Google Cloud Console project](https://console.cloud.google.com)
-	- Enable YouTube Data API 3.0
-	- Create API Credentials and save them into the `.env` file
-3. Find Youtube Channel ID and playlist ID
-	- The format for ID is `UC_x5XG1OV2P6uZZ5FSM9Ttw`. There are [multiple ways](https://stackoverflow.com/questions/14366648/how-can-i-get-a-channel-id-from-youtube/18665812#18665812) to search for target channel's ID.
-	- The Playlist ID is similar to the Channel ID, but the first two letters are `UU_` instead of `UC_`
+	- Enable YouTube Data API 3.0.
+	- Create API Credentials and save them into the `.env` file.
+ 	- Register a new [Twitch application](https://dev.twitch.tv/console/apps)
+  	- Copy the Client ID keys to the `.env` file.
 4. Run the app:
 	- Run the follow command to install required libraries:
 		`pip install -r requirements.txt`
 	- Run the bot with either:
 		`python source/main.py` or `./dreamcatcher`
 	- use `/Sync` command to synchronize bot's slash commands with discord.
-	- use available slash commands to define bot behavior
+	- use available slash commands to define bot activity:
+		`/subscribe_[platform]_channel` to subscribe the specified channel to receive notifications for activity by the given social media channel.
+		`/add_notification_role` to specify a Discord role which will be notified whenever new content is shared
+		

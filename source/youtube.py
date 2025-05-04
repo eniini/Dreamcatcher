@@ -224,8 +224,6 @@ def batch_fetch_activity_metadata(video_ids: set[str]) -> dict:
 				detected_status = "liveStreamNow"
 			else:
 				detected_status = "upload"
-
-			main.logger.info(f"[{detected_status}] -> {snippet.get("title")}\n")
 			
 			video_metadata_map[vid] = {
 				"item": item,
