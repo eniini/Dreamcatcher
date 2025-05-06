@@ -254,7 +254,10 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		elif detected_status == "liveStreamNow":
 			phase_suffix = "live"
 		else:
-			# check if we already notified this video as a livestream
+			phase_suffix = "upload"
+
+		# check if we already notified this video as a livestream
+		if detected_status == "upload":
 			previously_notified_id = video_id + "live"
 			if sql.check_post_match(video_id, previously_notified_id):
 				# livestream of this was already notified, skip notifying as upload
