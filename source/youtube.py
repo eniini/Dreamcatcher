@@ -255,12 +255,12 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 			phase_suffix = "live"
 		else:
 			# check if we already notified this video as a livestream
-			previously_notified_id = item["activity_id"] + "live"
-			if sql.check_post_match(item["internal_id"], previously_notified_id):
+			previously_notified_id = video_id + "live"
+			if sql.check_post_match(video_id, previously_notified_id):
 				# livestream of this was already notified, skip notifying as upload
 				continue
 
-		virtual_id = item["activity_id"] + phase_suffix
+		virtual_id = video_id + phase_suffix
 		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
 
