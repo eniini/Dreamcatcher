@@ -144,7 +144,7 @@ async def check_for_twitch_activities():
 					live_info = await fetch_twitch_stream_info(twitch_login_name)
 					if live_info:
 						pending_notifications.append({
-							"type": "liveStreamNow",
+							"type": "live",
 							"internal_id": internal_id,
 							"channel_name": twitch_login_name,
 							"title": live_info["title"]

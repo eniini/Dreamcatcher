@@ -219,9 +219,9 @@ def batch_fetch_activity_metadata(video_ids: set[str]) -> dict:
 			live_status = snippet.get("liveBroadcastContent", "none").lower()
 
 			if live_status == "upcoming":
-				detected_status = "liveStreamScheduled"
+				detected_status = "upcoming"
 			elif live_status == "live":
-				detected_status = "liveStreamNow"
+				detected_status = "live"
 			else:
 				detected_status = "upload"
 			
@@ -249,9 +249,9 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		detected_status = video_data.get("status")
 
 		# determine notification type based on live status
-		if detected_status == "liveStreamScheduled":
-			phase_suffix = "scheduled"
-		elif detected_status == "liveStreamNow":
+		if detected_status == "upcoming":
+			phase_suffix = "upcoming"
+		elif detected_status == "live":
 			phase_suffix = "live"
 		else:
 			phase_suffix = "upload"
@@ -260,13 +260,13 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		if detected_status == "upload":
 			previously_notified_id = video_id + "live"
 			if sql.check_post_match(video_id, previously_notified_id):
+				sql.update_latest_post(item["internal_id"], video_id + "upload", title)
 				# livestream of this was already notified, skip notifying as upload
 				continue
-
+		# otherwise, add the status suffix to video ID and save it in the database
 		virtual_id = video_id + phase_suffix
 		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
-
 		sql.update_latest_post(item["internal_id"], virtual_id, title)
 
 		main.logger.info(f"New activity detected for channel {item['channel_name']} ({item['internal_id']})")
