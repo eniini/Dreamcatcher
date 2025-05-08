@@ -178,7 +178,7 @@ def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 			return None
 
 		return {
-			"internal_id": internal_id,
+			"internal_channel_id": internal_id,
 			"channel_name": channel_name,
 			"activity_id": activity_id,
 			"title": title,
@@ -259,17 +259,17 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		# check if we already notified this video as a livestream
 		if detected_status == "upload":
 			previously_notified_id = video_id + "live"
-			if sql.check_post_match(video_id, previously_notified_id):
-				sql.update_latest_post(item["internal_id"], video_id + "upload", title)
+			if sql.check_post_match(item["internal_channel_id"], previously_notified_id):
+				sql.update_latest_post(item["internal_channel_id"], video_id + "upload", title)
 				# livestream of this was already notified, skip notifying as upload
 				continue
 		# otherwise, add the status suffix to video ID and save it in the database
 		virtual_id = video_id + phase_suffix
-		if sql.check_post_match(item["internal_id"], virtual_id):
+		if sql.check_post_match(item["internal_channel_id"], virtual_id):
 			continue
-		sql.update_latest_post(item["internal_id"], virtual_id, title)
+		sql.update_latest_post(item["internal_channel_id"], virtual_id, title)
 
-		main.logger.info(f"New activity detected for channel {item['channel_name']} ({item['internal_id']})")
+		main.logger.info(f"New activity detected for channel {item["channel_name"]} ({item["internal_channel_id"]})")
 		main.logger.info(f"Activity type: {detected_status}")
 		main.logger.info(f"Video ID: {video_id}")
 		main.logger.info(f"Video title: {title}")
