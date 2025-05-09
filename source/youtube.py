@@ -125,7 +125,7 @@ async def check_for_youtube_activities() -> None:
 
 	main.logger.info(f"Starting the Youtube activity sharing task...\n")
 
-	wait_time = calculate_optimal_polling_interval()
+	main.yt_wait_time = calculate_optimal_polling_interval()
 
 	while True:
 		try:
@@ -152,7 +152,7 @@ async def check_for_youtube_activities() -> None:
 		except Exception as e:
 			main.logger.error(f"Error inside Youtube activity loop: {e}\n")
 
-		await asyncio.sleep(wait_time)
+		await asyncio.sleep(main.yt_wait_time)
 
 def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 	"""
@@ -269,7 +269,7 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 			continue
 		sql.update_latest_post(item["internal_channel_id"], virtual_id, title)
 
-		main.logger.info(f"New activity detected for channel {item["channel_name"]} ({item["internal_channel_id"]})")
+		main.logger.info(f"New activity detected for channel {item['channel_name']} ({item['internal_channel_id']})")
 		main.logger.info(f"Activity type: {detected_status}")
 		main.logger.info(f"Video ID: {video_id}")
 		main.logger.info(f"Video title: {title}")
@@ -315,7 +315,7 @@ async def check_for_members_only_youtube_activity() -> None:
 							continue  # already processed
 
 						pending_notifications.append({
-							"internal_id": internal_id,
+							"internal_channel_id": internal_id,
 							"channel_name": channel_name,
 							"activity_id": video_id,
 							"title": "(unknown title - resolving)",
