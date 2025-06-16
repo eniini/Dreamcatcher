@@ -29,9 +29,9 @@ Locally hosted Discord bot for keeping up with content creator's socials and str
  	- Register a new [Twitch application](https://dev.twitch.tv/console/apps)
   	- Copy the Client ID keys to the `.env` file.
 4. Run the app:
-	- Run the follow command to install required libraries:
+	- Install required libraries:
 		`pip install -r requirements.txt`
 	- Run the bot with either:
 		`python source/main.py` or `./dreamcatcher`
-	- use `/Sync` command to synchronize bot's slash commands with discord.
-	- use available slash commands to define bot activity.
+	- Use `/Sync` command to synchronize bot's slash commands with discord.
+	- Use available slash commands to define bot activity.
