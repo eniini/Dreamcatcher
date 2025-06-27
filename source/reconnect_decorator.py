@@ -26,11 +26,11 @@ def reconnect_api_with_backoff(client_initialize_func, client_name: str, max_ret
 
 					if "quotaExceeded" in str(e) or "403" in str(e):
 						main.logger.critical(f"Bot has exceeded {client_name} API quota.")
-						await bot.bot_internal_message("Bot has exceeded {client_name} API quota!")
+						await bot.bot_internal_message(f"Bot has exceeded {client_name} API quota!")
 						return None
 					if attempt == max_retries:
 						main.logger.error(f"Max retries reached. Could not recover API connection.")
-						await bot.bot_internal_message("Bot failed to connect to {client_name} API after max retries...")
+						await bot.bot_internal_message(f"Bot failed to connect to {client_name} API after max retries...")
 
 					wait_time = base_delay * pow(2, attempt - 1)
 					main.logger.info(f"Reinitializing {client_name} API client in {wait_time:.2f} seconds...")
