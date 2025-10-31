@@ -37,7 +37,6 @@ httpx_logger.setLevel(logging.WARNING)
 notified_streams = set()
 
 yt_wait_time = 60  # default
-wait_time_updated = asyncio.Event()
 
 async def main():
 	try:

@@ -28,8 +28,7 @@ class Notifications(commands.Cog):
 	async def update_yt_wait_time(self):
 		new_wait = youtube.calculate_optimal_polling_interval()
 		main.yt_wait_time = new_wait
-		main.wait_time_updated.set()
-		main.wait_time_updated.clear()
+		# no event; loops will pick up the new value on next cycle
 		main.logger.info(f"Updated YouTube wait time to {main.yt_wait_time} seconds.\n")
 
 	@app_commands.command(name="add_bluesky_subscription", description="Subscribe a discord channel to receive notifications from a Bluesky profile.")

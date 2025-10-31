@@ -1,8 +1,6 @@
 import asyncio
 from googleapiclient.discovery import build
 
-import json
-
 import main
 import bot
 import sql
@@ -14,23 +12,15 @@ from reconnect_decorator import reconnect_api_with_backoff
 # edit: the video/livestream details are fetched in a batch request, so the cost is 1 unit for 50 video IDs.
 # this means that the soft cap for YT channels to monitor is roughly 300 channels.
 
-def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.05) -> int:
+def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.005) -> int:
 	"""
 	Calculates the optimal polling interval (in seconds) to stay under the YouTube API daily quota.
-
-	Args:
-		channel_count (int): Number of YouTube channels being monitored.
-		quota_limit (int): Total daily quota limit (default is 10,000).
-		quota_buffer (float): Fractional buffer to leave unused (default 0.05 = 5%).
-
-	Returns:
-		int: Optimal number of seconds to wait between polling cycles.
 	"""
 	# Leave a buffer to avoid accidental overuse
 	max_quota_usage = quota_limit * (1 - quota_buffer)
 
-	# Each cycle uses 1 activity + 1 batched video call (treated as a single extra call)
-	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + len(sql.get_all_social_media_subscriptions_for_platform("YouTube_members")) + 1
+	# Each cycle uses 1 activity + 2 batched video calls (one per check loop)
+	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + len(sql.get_all_social_media_subscriptions_for_platform("YouTube_members")) + 2
 
 	# Max cycles per day
 	max_cycles_per_day = max_quota_usage // quota_per_cycle
@@ -121,10 +111,11 @@ async def get_channel_handle(channel_id: str) -> str:
 
 @reconnect_api_with_backoff(initialize_youtube_client, "YouTube")
 async def check_for_youtube_activities() -> None:
-	global youtubeClient
-
+	"""
+	Main YouTube activity polling loop.
+	"""
 	main.logger.info(f"Starting the Youtube activity sharing task...\n")
-
+	# Initialize wait_time from currently calculated value (may be updated externally)
 	main.yt_wait_time = calculate_optimal_polling_interval()
 
 	while True:
@@ -152,6 +143,7 @@ async def check_for_youtube_activities() -> None:
 		except Exception as e:
 			main.logger.error(f"Error inside Youtube activity loop: {e}\n")
 
+		# simple sleep; loop will pick up any main.yt_wait_time changes next iteration
 		await asyncio.sleep(main.yt_wait_time)
 
 def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
@@ -289,11 +281,13 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 
 @reconnect_api_with_backoff(initialize_youtube_client, "YouTube")
 async def check_for_members_only_youtube_activity() -> None:
-	global youtubeClient
-
+	"""
+	Main YouTube Members-Only activity polling loop.
+	"""
 	main.logger.info(f"Starting the Members-Only Youtube activity sharing task...\n")
 
-	wait_time = calculate_optimal_polling_interval()
+	# Use the shared main.yt_wait_time and allow dynamic updates via event
+	main.yt_wait_time = calculate_optimal_polling_interval()
 
 	while True:
 		try:
@@ -335,7 +329,8 @@ async def check_for_members_only_youtube_activity() -> None:
 		except Exception as e:
 			main.logger.error(f"Error inside members-only Youtube activity loop: {e}\n")
 
-		await asyncio.sleep(wait_time)
+		# simple sleep; loop will pick up any main.yt_wait_time changes next iteration
+		await asyncio.sleep(main.yt_wait_time)
 
 def fetch_latest_members_only_content(channel_url: str, number_of_items: 1) -> list[str]:
 	"""
