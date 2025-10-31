@@ -370,11 +370,11 @@ class Notifications(commands.Cog):
 
 			# Cleanup, If no Discord channels are subscribed to the social media channel, remove it from the database
 			if not sql.get_discord_channels_for_social_channel(internal_social_media_channel):
-				sql.remove_social_media_channel(internal_social_media_channel)
-				sql.remove_latest_post(internal_social_media_channel)
-
+				# Before actually removing the YT channel data, update the wait time
 				if sql.get_channel_platform(internal_social_media_channel) == "YouTube" or sql.get_channel_platform(internal_social_media_channel) == "YouTube_members":
 					await self.update_yt_wait_time()
+				sql.remove_social_media_channel(internal_social_media_channel)
+				sql.remove_latest_post(internal_social_media_channel)
 
 				main.logger.info(f"Removing social media channel '{target_social_media_name}' and its stored post from database...\n")
 			else:
