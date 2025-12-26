@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import re
 import urlextract
 from atproto import Client
@@ -145,8 +144,6 @@ async def fetch_bluesky_profile(channel_id):
 		main.logger.error(f"Error fetching Bluesky profile: {e}\n")
 		return None
 
-
-
 @reconnect_api_with_backoff(initialize_bluesky_client, "Bluesky")
 async def fetch_bluesky_posts(channel_id):
 	"""
@@ -156,16 +153,53 @@ async def fetch_bluesky_posts(channel_id):
 		feed = client.get_author_feed(actor=channel_id, limit=postFetchCount)
 		# Extract post text from FeedViewPost objects
 		posts = []
+
+		reply_parent_uri = None
+		reply_parent_did = None
+
 		for item in feed.feed:
+			if hasattr(item.post.record, "reply") and item.post.record.reply:
+				reply_parent_uri = item.post.record.reply.parent.uri
+				reply_parent_did = item.post.record.reply.parent.uri.split("/")[2]  # DID from at://
+
 			if hasattr(item.post.record, "text"):  # Ensure post has text
 				post_text = item.post.record.text
 				post_uri = item.post.uri  # Get post URI
 				images = extract_media(item.post)
 				links = extract_links(item.post)
-				posts.append({"text": post_text, "uri": post_uri, "post_images": images, "links": links})
+				posts.append({
+					"text": post_text,
+					"uri": post_uri,
+					"post_images": images,
+					"links": links,
+					"reply_parent_uri": reply_parent_uri,
+					"reply_parent_did": reply_parent_did
+				})
 		return posts
 	except Exception as e:
 		main.logger.error(f"Error fetching Bluesky posts: {e}\n")
+		return None
+
+@reconnect_api_with_backoff(initialize_bluesky_client, "Bluesky")
+async def fetch_bluesky_post_by_uri(uri: str):
+	"""
+	Directly fetches a single Bluesky post by its URI.
+	"""
+	try:
+		record = client.get_post_thread(uri)
+		parent = record.thread.post
+
+		return {
+			"text": parent.record.text,
+			"uri": parent.uri,
+			"images": extract_media(parent),
+			"links": extract_links(parent),
+			"author_did": parent.author.did,
+			"author_name": parent.author.display_name,
+			"author_avatar": parent.author.avatar
+		}
+	except Exception as e:
+		main.logger.error(f"Failed to fetch parent post {uri}: {e}")
 		return None
 
 async def share_bluesky_posts() -> None:
@@ -203,8 +237,36 @@ async def share_bluesky_posts() -> None:
 					content = replace_urls(post['text'], post['links'])
 					images = post['post_images']
 					links = post['links']
+					post_type = "root"
+					is_reply = False
 
 					notify_list = sql.get_discord_channels_for_social_channel(internal_id)
+
+					if post["reply_parent_uri"]:
+						# This post is a reply to another post (even if by self)
+						is_reply = True
+						# Only if replying to another account (not self-reply), fetch and share the root post as well.
+						if post["reply_parent_did"] != channel_id:
+							post_type = "original_post"
+							parent_uri = post["reply_parent_uri"]
+							parent_post = await fetch_bluesky_post_by_uri(parent_uri)
+							if parent_post:
+								# Send parent post to Discord channels before the reply post
+								main.logger.info(f"Sending Bluesky parent post {parent_uri} to Discord channels before reply post {post_uri}...\n")
+								for discord_channel in notify_list:
+									await bot.notify_bluesky_activity(
+										discord_channel,
+										parent_post["uri"],
+										parent_post["text"],
+										parent_post["images"],
+										parent_post["links"],
+										parent_post["author_name"],
+										parent_post["author_avatar"],
+										post_type
+									)
+						else:
+							post_type = "self_reply"
+
 					for discord_channel in notify_list:
 						main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
 						await bot.notify_bluesky_activity(
@@ -214,7 +276,8 @@ async def share_bluesky_posts() -> None:
 							images,
 							links,
 							profile.get("display_name"),
-							profile.get("avatar_url")
+							profile.get("avatar_url"),
+							"root" if not is_reply else "reply"
 						)
 
 				# Update the database with the most recent post ID (first in the new_posts list)

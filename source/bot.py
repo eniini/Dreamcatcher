@@ -288,24 +288,36 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 	else:
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
-async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str) -> None:
+async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str, post_type: str) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	# check if the bot has permission to send messages in the channel
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		notify_role = sql.get_notification_role(channel.id)
 		ping_role = ""
-		if notify_role:
+		# only ping role for root posts or replies to third party posts.
+		# self-replies and context posts do not cumulate pings.
+		if notify_role and post_type is "root" or post_type == "reply":
 			ping_role = f"<@&{notify_role}> "
+
+		TITLE_MAP = {
+			"root": "🦋 Bluesky Post",
+			"self_reply": "🦋🧵",
+			"reply": "🦋💬 Bluesky Reply",
+			"context": "🦋🧵 Original Post",
+}
 		try:
 			# Create embed for better formatting
 			post_url = blsky.convert_bluesky_uri_to_url(post_uri)
 			embed = discord.Embed(
-				title="🦋 New Bluesky Post!",
+				title = TITLE_MAP.get(post_type, "🦋 Bluesky Post"),
 				description=content,
 				color=discord.Color.blue(),
 				url=post_url,
 				timestamp = discord.utils.utcnow()
 			)
+			# Add extra context for replied posts by third party
+			if post_type == "context":
+				embed.description = f"*Original post replied to by {channel_name}:*\n\n{content}"
 			embed.set_author(name=f"{channel_name}",
 				icon_url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
 			)
