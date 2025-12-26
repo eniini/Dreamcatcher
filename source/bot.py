@@ -268,9 +268,14 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 					f"{ping_role}**{channel_name} just uploaded a new video!** 💭\n"
 					f"{video_url}"
 				)
-			elif activity_type == "upcoming":
+			elif activity_type == "upcoming_livestream":
 				await channel.send(
 					f"{ping_role}**{channel_name} just scheduled a new stream!** 🔔\n"
+					f"{video_url}"
+				)
+			elif activity_type == "upcoming_premiere":
+				await channel.send(
+					f"{ping_role}**{channel_name} just scheduled a new premiere!** 🎬\n"
 					f"{video_url}"
 				)
 			elif activity_type == "live":

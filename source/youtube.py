@@ -1,5 +1,6 @@
 import asyncio
 from googleapiclient.discovery import build
+from datetime import datetime, timezone
 
 import main
 import bot
@@ -12,12 +13,12 @@ from reconnect_decorator import reconnect_api_with_backoff
 # edit: the video/livestream details are fetched in a batch request, so the cost is 1 unit for 50 video IDs.
 # this means that the soft cap for YT channels to monitor is roughly 300 channels.
 
-def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.005) -> int:
+def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.01) -> int:
 	"""
 	Calculates the optimal polling interval (in seconds) to stay under the YouTube API daily quota.
 	"""
 	# Leave a buffer to avoid accidental overuse
-	max_quota_usage = quota_limit * (1 - quota_buffer)
+	max_quota_usage = quota_limit * (1.0 - quota_buffer)
 
 	# Each cycle uses 1 activity + 2 batched video calls (one per check loop)
 	quota_per_cycle = len(sql.get_all_social_media_subscriptions_for_platform("YouTube")) + len(sql.get_all_social_media_subscriptions_for_platform("YouTube_members")) + 2
@@ -104,6 +105,27 @@ async def get_channel_handle(channel_id: str) -> str:
 	except Exception as e:
 		main.logger.error(f"Error generating request for channel handle: {e}")
 		raise
+
+def is_likely_premiere(snippet: dict, live_details: dict) -> bool:
+	"""
+	Checking for differentiating premieres vs scheduled livestreams
+	If video was published significantly earlier than its scheduled start, its probably a premiere.
+	"""
+	try:
+		published_at = snippet.get("publishedAt")
+		scheduled_start = live_details.get("scheduledStartTime")
+
+		if not published_at or not scheduled_start:
+			return False
+
+		published_dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+		scheduled_dt = datetime.fromisoformat(scheduled_start.replace("Z", "+00:00"))
+
+		# 24h gap is a safe threshold
+		return (scheduled_dt - published_dt).total_seconds() >= 86400
+	except Exception:
+		return False
+
 
 #
 #	Main YT API loop
@@ -208,10 +230,16 @@ def batch_fetch_activity_metadata(video_ids: set[str]) -> dict:
 			vid = item['id']
 			snippet = item.get("snippet", {})
 
+			live_details = item.get("liveStreamingDetails", {})
+
 			live_status = snippet.get("liveBroadcastContent", "none").lower()
 
 			if live_status == "upcoming":
-				detected_status = "upcoming"
+				if is_likely_premiere(snippet, live_details):
+					detected_status = "upcoming_premiere"
+				else:
+					detected_status = "upcoming_livestream"
+
 			elif live_status == "live":
 				detected_status = "live"
 			else:
@@ -241,8 +269,8 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		detected_status = video_data.get("status")
 
 		# determine notification type based on live status
-		if detected_status == "upcoming":
-			phase_suffix = "upcoming"
+		if detected_status in ("upcoming_livestream", "upcoming_premiere"):
+			phase_suffix = detected_status
 		elif detected_status == "live":
 			phase_suffix = "live"
 		else:

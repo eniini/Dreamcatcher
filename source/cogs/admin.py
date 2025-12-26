@@ -10,7 +10,7 @@ class Admin(commands.Cog):
 	def __init__(self, _bot):
 		self._bot = _bot
 
-	@app_commands.command(name="sync", description="Sync commands (dev only)")
+	@app_commands.command(name="sync", description="[dev only]")
 	@app_commands.default_permissions(administrator=True)		# Hides command from users without this permission
 	@app_commands.checks.has_permissions(administrator=True)	# Checks if the user has the manage_guild permission
 	async def sync_commands(self, interaction: discord.Interaction):
@@ -29,7 +29,7 @@ class Admin(commands.Cog):
 			await interaction.response.send_message(f"❌ Sync failed: {e}",
 				ephemeral=True)
 
-	@app_commands.command(name="print_sql", description="Print out the SQL database (dev only)")
+	@app_commands.command(name="print_sql", description="[dev only]")
 	@app_commands.default_permissions(administrator=True)		# Hides command from users without this permission
 	@app_commands.checks.has_permissions(administrator=True)	# Checks if the user has the manage_guild permission
 	async def print_sql(self, interaction: discord.Interaction):
@@ -43,7 +43,7 @@ class Admin(commands.Cog):
 		try:
 			await interaction.response.send_message("✅ Printing SQL contents to home channel...\n",
 				ephemeral=True)
-			await bot.bot_internal_message(f"```SQL\n{sql.read_table_contents()}```")
+			await bot.bot_internal_message(f"{sql.read_table_contents()}")
 
 		except Exception as e:
 			await interaction.response.send_message(f"❌ Printing SQL contents failed: {e}",

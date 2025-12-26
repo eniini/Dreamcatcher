@@ -37,8 +37,8 @@ def read_table_contents():
 	result_str += (f"{pd.read_sql_query('SELECT * FROM SocialMediaChannels', conn)}\n")
 	result_str += "\nSubscriptions:\n"
 	result_str += (f"{pd.read_sql_query('SELECT * FROM Subscriptions', conn)}\n")
-	result_str += "\nLatest Posts:\n"
-	result_str += (f"{pd.read_sql_query('SELECT * FROM LatestPosts', conn)}\n")
+	result_str += "\nPosts:\n"
+	result_str += (f"{pd.read_sql_query('SELECT * FROM Posts', conn)}\n")
 
 
 	conn.commit()
@@ -70,6 +70,7 @@ def init_db():
 	"""
 	Establishes connection to SQLite database.
 	Create tables for DiscordChannels, SocialMediaChannels, and Subscriptions.
+	Also handles schema migrations to update existing databases.
 	"""
 	# Check if bot_database.db exists
 	clean_setup = not os.path.exists(db_file)
@@ -78,6 +79,13 @@ def init_db():
 	if conn is None:
 		return
 	cursor = conn.cursor()
+
+	# Table for Schema Versioning
+	cursor.execute('''
+		CREATE TABLE IF NOT EXISTS SchemaVersion (
+			version INTEGER PRIMARY KEY
+		)
+	''')
 
 	# Table for Discord Channels.
 	cursor.execute('''
@@ -121,13 +129,136 @@ def init_db():
 			FOREIGN KEY(social_media_channel_id) REFERENCES SocialMediaChannels(id)
 		)
 	''')
+
+	# Ver. 2 Table for storing multiple posts per social media channel.
+	cursor.execute('''
+		CREATE TABLE IF NOT EXISTS Posts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			social_media_channel_id INTEGER NOT NULL,
+			post_id TEXT NOT NULL,
+			content TEXT,
+			timestamp TEXT NOT NULL,
+			FOREIGN KEY (social_media_channel_id)
+				REFERENCES SocialMediaChannels(id)
+				ON DELETE CASCADE,
+			UNIQUE (social_media_channel_id, post_id)
+		)
+	''')
+
+	cursor.execute('''
+		CREATE INDEX IF NOT EXISTS idx_posts_channel_time
+			ON Posts (social_media_channel_id, timestamp DESC);
+	''')
+
 	conn.commit()
 	# Close the connection after setup
 	conn.close()
 
+	# Apply any necessary schema migrations
+	apply_schema_migrations()
+
 	# populate the newly generated SQL with hardcoded data.
 	if clean_setup is True:
 		initialize_placeholder_data()
+
+#	------------------- SCHEMA MIGRATION FUNCTIONS ----------------------
+
+def get_schema_version():
+	"""
+	Get the current schema version from the database.
+	Returns 0 if SchemaVersion table is empty (new database).
+	"""
+	conn = get_connection()
+	if conn is None:
+		return 0
+	try:
+		cursor = conn.cursor()
+		cursor.execute("SELECT version FROM SchemaVersion ORDER BY version DESC LIMIT 1")
+		row = cursor.fetchone()
+		return row[0] if row else 0
+	except sqlite3.Error as e:
+		main.logger.error(f"Error getting schema version: {e}")
+		return 0
+	finally:
+		conn.close()
+
+def set_schema_version(version: int):
+	"""
+	Update the schema version in the database.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return
+	try:
+		cursor = conn.cursor()
+		cursor.execute("INSERT INTO SchemaVersion (version) VALUES (?)", (version,))
+		conn.commit()
+	except sqlite3.Error as e:
+		main.logger.error(f"Error setting schema version: {e}")
+	finally:
+		conn.close()
+
+def apply_schema_migrations():
+	"""
+	Apply any necessary schema migrations based on current version.
+	This function is idempotent - it can be called multiple times safely.
+	"""
+	current_version = get_schema_version()
+	
+	# Migration 0 -> 1: Migrate data from LatestPosts to Posts table
+	if current_version < 1:
+		migrate_latest_posts_to_posts()
+		set_schema_version(1)
+		main.logger.info("Successfully applied schema migration to version 1 (LatestPosts → Posts)")
+
+def migrate_latest_posts_to_posts():
+	"""
+	Migrate existing data from LatestPosts table to Posts table.
+	This migration:
+	1. Copies all data from LatestPosts to Posts (one-time operation)
+	LatestPosts table is kept as a backup and can be manually dropped later after verification.
+	"""
+	conn = get_connection()
+	if conn is None:
+		return
+	try:
+		cursor = conn.cursor()
+		
+		# Check if LatestPosts table exists
+		cursor.execute('''
+			SELECT name FROM sqlite_master 
+			WHERE type='table' AND name='LatestPosts'
+		''')
+		if cursor.fetchone() is None:
+			# LatestPosts doesn't exist, no migration needed
+			return
+		
+		# Check if there's any data to migrate
+		cursor.execute("SELECT COUNT(*) FROM LatestPosts")
+		count = cursor.fetchone()[0]
+		
+		if count > 0:
+			main.logger.info(f"Migrating {count} posts from LatestPosts to Posts table...")
+			
+			# Migrate data from LatestPosts to Posts
+			cursor.execute('''
+				INSERT OR IGNORE INTO Posts (social_media_channel_id, post_id, content, timestamp)
+				SELECT social_media_channel_id, post_id, content, timestamp
+				FROM LatestPosts
+			''')
+			conn.commit()
+			main.logger.info(f"Successfully migrated {count} posts to Posts table")
+		else:
+			main.logger.info("No data to migrate from LatestPosts")
+		
+	except sqlite3.Error as e:
+		main.logger.error(f"Error during schema migration: {e}")
+		try:
+			conn.rollback()
+		except:
+			pass
+	finally:
+		conn.close()
 
 #	------------------- TABLES HANDLING -----------------------------
 
@@ -544,8 +675,8 @@ def get_all_social_media_subscriptions_for_platform(platform):
 
 def update_latest_post(social_media_channel_id: int, post_id: str, content: str, timestamp=None):
 	"""
-	Insert or update the LatestPosts record for a given social media channel.
-	This function overwrites the previous latest post with the new data whenever a webhook is updated.
+	Add a new post to the Posts table for a given social media channel.
+	If there are more than 5 posts for this channel, delete the oldest one.
 	"""
 	conn = get_connection()
 	if conn is None:
@@ -554,16 +685,21 @@ def update_latest_post(social_media_channel_id: int, post_id: str, content: str,
 		cursor = conn.cursor()
 		if timestamp is None:
 			timestamp = datetime.now(timezone.utc).isoformat()
-		# SQLite UPSERT syntax: if a record for this social_media_channel_id exists, update it.
+		# Insert the new post into Posts table
 		cursor.execute('''
-			INSERT INTO LatestPosts (social_media_channel_id, post_id, content, timestamp)
+			INSERT OR IGNORE INTO Posts (social_media_channel_id, post_id, content, timestamp)
 			VALUES (?, ?, ?, ?)
-			ON CONFLICT(social_media_channel_id)
-			DO UPDATE SET
-				post_id=excluded.post_id,
-				content=excluded.content,
-				timestamp=excluded.timestamp
 		''', (social_media_channel_id, post_id, content, timestamp))
+		# Delete oldest post if there are more than 5 posts for this channel
+		cursor.execute('''
+			DELETE FROM Posts
+			WHERE social_media_channel_id = ? AND id NOT IN (
+				SELECT id FROM Posts
+				WHERE social_media_channel_id = ?
+				ORDER BY timestamp DESC
+				LIMIT 5
+			)
+		''', (social_media_channel_id, social_media_channel_id))
 		conn.commit()
 	except sqlite3.Error as e:
 		main.logger.error(f"Error updating latest post: {e}")
@@ -581,8 +717,10 @@ def get_latest_post_id(social_media_channel_id: int):
 	try:
 		cursor = conn.cursor()
 		cursor.execute('''
-			SELECT post_id FROM LatestPosts
+			SELECT post_id FROM Posts
 			WHERE social_media_channel_id = ?
+			ORDER BY timestamp DESC
+			LIMIT 1
 		''', (social_media_channel_id,))
 		row = cursor.fetchone()
 		if row is None:
@@ -596,24 +734,22 @@ def get_latest_post_id(social_media_channel_id: int):
 
 def check_post_match(social_media_channel_id: int, post_id: str):
 	"""
-	Compare latest post by given channel to the one saved into database. If the post_id is the same as stored one,
-	Return true. Otherwise return false, indicating that the post is new.
+	Check if a post with the given post_id exists in the Posts table for the given social media channel.
+	Return true if the post exists, false otherwise.
 	"""
 	conn = get_connection()
 	if conn is None:
 		return False
 	try:
 		cursor = conn.cursor()
-		# find matching table for social media channel if one exists
+		# Check if a post with this post_id exists for the social media channel
 		cursor.execute('''
-			SELECT post_id FROM LatestPosts
-			WHERE social_media_channel_id = ?
-		''', (social_media_channel_id,))
+			SELECT post_id FROM Posts
+			WHERE social_media_channel_id = ? AND post_id = ?
+		''', (social_media_channel_id, post_id))
 		row = cursor.fetchone()
-		if row is None:
-			return False
-		# return True if stored post is the same as given
-		return row['post_id'] == post_id
+		# return True if post exists, False otherwise
+		return row is not None
 	except sqlite3.Error as e:
 		main.logger.error(f"Error checking post match: {e}")
 		return False
