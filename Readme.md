@@ -1,5 +1,4 @@
 # Dreamcatcher 🎐
-
 Locally hosted Discord bot for keeping up with content creator's socials and streams.
 
 ## Features
@@ -35,3 +34,5 @@ Locally hosted Discord bot for keeping up with content creator's socials and str
 		`python source/main.py` or `./dreamcatcher`
 	- Use `/Sync` command to synchronize bot's slash commands with discord.
 	- Use available slash commands to define bot activity.
+
+![](dreamcatcher_icon.png)
