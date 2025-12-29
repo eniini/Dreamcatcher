@@ -154,26 +154,32 @@ async def fetch_bluesky_posts(channel_id):
 		# Extract post text from FeedViewPost objects
 		posts = []
 
-		reply_parent_uri = None
-		reply_parent_did = None
-
 		for item in feed.feed:
+			reply_parent_uri = None
+			reply_parent_did = None
+
+			# check if post is a reply
 			if hasattr(item.post.record, "reply") and item.post.record.reply:
 				reply_parent_uri = item.post.record.reply.parent.uri
 				reply_parent_did = item.post.record.reply.parent.uri.split("/")[2]  # DID from at://
 
+			# check if post is a repost/quote
+			is_repost = False
+			if (
+				hasattr(item, "reason")
+				and item.reason
+				and getattr(item.reason, "$type", None) == "app.bsky.feed.defs#reasonRepost"
+			): is_repost = True
+
 			if hasattr(item.post.record, "text"):  # Ensure post has text
-				post_text = item.post.record.text
-				post_uri = item.post.uri  # Get post URI
-				images = extract_media(item.post)
-				links = extract_links(item.post)
 				posts.append({
-					"text": post_text,
-					"uri": post_uri,
-					"post_images": images,
-					"links": links,
+					"text": item.post.record.text,
+					"uri": item.post.uri,
+					"post_images": extract_media(item.post),
+					"links": extract_links(item.post),
 					"reply_parent_uri": reply_parent_uri,
-					"reply_parent_did": reply_parent_did
+					"reply_parent_did": reply_parent_did,
+					"is_repost": is_repost
 				})
 		return posts
 	except Exception as e:
@@ -212,6 +218,10 @@ async def share_bluesky_posts() -> None:
 
 				internal_id = sql.get_id_for_channel_url(channel_id)
 
+				# Keep track of already shared parent URIs (posts) to avoid duplicates.
+				# Avoids spam if subscribed account replies to 3rd party post multiple times.
+				posted_parent_uris = set()
+
 				# Fetch posts from Bluesky
 				posts = await fetch_bluesky_posts(channel_id)
 				if not posts:
@@ -238,34 +248,39 @@ async def share_bluesky_posts() -> None:
 					images = post['post_images']
 					links = post['links']
 					post_type = "root"
-					is_reply = False
+
+					if post['is_repost']:
+						post_type = "repost"
 
 					notify_list = sql.get_discord_channels_for_social_channel(internal_id)
 
 					if post["reply_parent_uri"]:
 						# This post is a reply to another post (even if by self)
-						is_reply = True
-						# Only if replying to another account (not self-reply), fetch and share the root post as well.
-						if post["reply_parent_did"] != channel_id:
-							post_type = "original_post"
-							parent_uri = post["reply_parent_uri"]
-							parent_post = await fetch_bluesky_post_by_uri(parent_uri)
-							if parent_post:
-								# Send parent post to Discord channels before the reply post
-								main.logger.info(f"Sending Bluesky parent post {parent_uri} to Discord channels before reply post {post_uri}...\n")
-								for discord_channel in notify_list:
-									await bot.notify_bluesky_activity(
-										discord_channel,
-										parent_post["uri"],
-										parent_post["text"],
-										parent_post["images"],
-										parent_post["links"],
-										parent_post["author_name"],
-										parent_post["author_avatar"],
-										post_type
-									)
-						else:
+						post_type = "reply"
+						if post["reply_parent_did"] == channel_id:
 							post_type = "self_reply"
+						else:
+							# Only if replying to another account (not self-reply), 
+							# fetch and share the root post as well.
+							# NOTE: this is an additional message sent before the reply post.
+							parent_uri = post["reply_parent_uri"]
+							# Check if we have already posted this parent URI
+							if parent_uri not in posted_parent_uris:
+								parent_post = await fetch_bluesky_post_by_uri(parent_uri)
+								if parent_post:
+									# Send parent post to Discord channels before the reply post
+									main.logger.info(f"Sending Bluesky parent post {parent_uri} to Discord channels before reply post {post_uri}...\n")
+									for discord_channel in notify_list:
+										await bot.notify_bluesky_activity(
+											discord_channel,
+											parent_post["uri"],
+											parent_post["text"],
+											parent_post["images"],
+											parent_post["links"],
+											parent_post["author_name"],
+											parent_post["author_avatar"],
+											"context"
+										)
 
 					for discord_channel in notify_list:
 						main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
@@ -277,7 +292,7 @@ async def share_bluesky_posts() -> None:
 							links,
 							profile.get("display_name"),
 							profile.get("avatar_url"),
-							"root" if not is_reply else "reply"
+							post_type
 						)
 
 				# Update the database with the most recent post ID (first in the new_posts list)

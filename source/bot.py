@@ -303,6 +303,7 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 			"root": "🦋 Bluesky Post",
 			"self_reply": "🦋🧵",
 			"reply": "🦋💬 Bluesky Reply",
+			"repost": "🦋🔁 Bluesky Repost",
 			"context": "🦋🧵 Original Post",
 }
 		try:
