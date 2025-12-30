@@ -1,5 +1,7 @@
 import asyncio
 import re
+from numpy import record
+from requests import post
 import urlextract
 from atproto import Client
 
@@ -171,7 +173,13 @@ async def fetch_bluesky_posts(channel_id):
 				and getattr(item.reason, "$type", None) == "app.bsky.feed.defs#reasonRepost"
 			): is_repost = True
 
-			if hasattr(item.post.record, "text"):  # Ensure post has text
+			record = item.post.record
+			has_text = bool(getattr(record, "text", "").strip())
+			has_embed = hasattr(record, "embed") and record.embed is not None
+			# Discard posts with no content (incomplete or deleted posts etc.)
+			if not (has_text or has_embed or is_repost):
+				continue
+			else:
 				posts.append({
 					"text": item.post.record.text,
 					"uri": item.post.uri,
