@@ -123,6 +123,7 @@ async def check_for_twitch_activities():
 	global twitch_session, twitch_auth_token
 
 	main.logger.info("Starting the Twitch activity sharing task...\n")
+	first_run_twitch = True
 	while True:
 		try:
 			twitch_subscriptions = sql.get_all_social_media_subscriptions_for_platform("Twitch")
@@ -154,6 +155,12 @@ async def check_for_twitch_activities():
 
 			await process_twitch_notifications(pending_notifications)
 
+			if first_run_twitch:
+				if hasattr(main, "startup") and main.startup.silent:
+					await main.startup.task_finished_first_run()
+				first_run_twitch = False
+				main.logger.info("Finished first run of Twitch activity sharing task.\n")
+
 		except Exception as e:
 			main.logger.error(f"Error inside Twitch activity loop: {e}\n")
 
@@ -163,6 +170,8 @@ async def process_twitch_notifications(pending_notifications: list[dict]) -> Non
 	"""
 	Process the batch of Twitch activities, updating database and notifying Discord channels.
 	"""
+	global first_run
+
 	for item in pending_notifications:
 		virtual_id = str(item["internal_id"]) + item["title"] + item["type"]
 
@@ -173,11 +182,14 @@ async def process_twitch_notifications(pending_notifications: list[dict]) -> Non
 
 		discord_channels = sql.get_discord_channels_for_social_channel(item["internal_id"])
 
-		for discord_channel in discord_channels:
-			await bot.notify_twitch_activity(
-				discord_channel,
-				item["type"],
-				item["channel_name"],
-				item.get("title"),
-				item.get("start_time")
-			)
+		if not main.startup.silent:
+			for discord_channel in discord_channels:
+				await bot.notify_twitch_activity(
+					discord_channel,
+					item["type"],
+					item["channel_name"],
+					item.get("title"),
+					item.get("start_time")
+				)
+		else:
+			main.logger.info(f"Skipping notification for Twitch channel {item['channel_name']} due to silent start.\n")

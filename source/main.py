@@ -1,7 +1,8 @@
 import os
 import logging
 import asyncio
-import signal 
+import signal
+import argparse
 from dotenv import load_dotenv
 
 import bot
@@ -25,6 +26,13 @@ TWITCH_CLIENT_SECRET	= os.getenv("TWITCH_CLIENT_SECRET")
 HOME_SERVER_ID			= int(os.getenv("HOME_SERVER_ID"))
 HOME_CHANNEL_ID			= int(os.getenv("HOME_CHANNEL_ID"))
 
+# Command-line argument parsing
+parser = argparse.ArgumentParser(description="Social media subscription Bot")
+parser.add_argument("--silent_start", action="store_true", help="Start the bot without notifying about unlogged content with timestamps older than the current time.")
+args = parser.parse_args()
+
+SILENT_START = args.silent_start # defaults to False
+
 # Setup logging for the main process
 logging.basicConfig(level=logging.INFO)  # Change this to WARNING for production!
 logger = logging.getLogger(__name__)
@@ -45,12 +53,18 @@ async def main():
 	except Exception as e:
 		logger.error(f"Error initializing content subscription database: {e}")
 		return
-		
+
+	# Silent start startup task
+	global startup
+	startup = bot.StartupSilencer(task_count=4, silent=SILENT_START)
+	# Make startup available to all modules
+	setattr(__import__("main"), "startup", startup)
+
 	# initialize APIs
 	await blsky.initialize_bluesky_client()
 	await youtube.initialize_youtube_client()
 	await twitch.initialize_twitch_session()
-	
+
 	asyncio.create_task(bot.bot.start(DISCORD_BOT_TOKEN))
 
 	# Create an event to signal shutdown

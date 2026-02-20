@@ -136,6 +136,8 @@ async def check_for_youtube_activities() -> None:
 	"""
 	Main YouTube activity polling loop.
 	"""
+	first_run_public = True
+
 	main.logger.info(f"Starting the Youtube activity sharing task...\n")
 	# Initialize wait_time from currently calculated value (may be updated externally)
 	main.yt_wait_time = calculate_optimal_polling_interval()
@@ -161,6 +163,11 @@ async def check_for_youtube_activities() -> None:
 			video_metadata_map = batch_fetch_activity_metadata(video_ids_to_check)
 
 			await process_youtube_notifications(pending_notifications, video_metadata_map)
+			if first_run_public:
+				if hasattr(main, "startup") and main.startup.silent:
+					await main.startup.task_finished_first_run()
+				first_run_public = False
+				main.logger.info(f"Finished first run of Youtube activity sharing task.\n")
 		
 		except Exception as e:
 			main.logger.error(f"Error inside Youtube activity loop: {e}\n")
@@ -255,6 +262,7 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 	"""
 	Process the batch of activity, updating database and notifying Discord channels if new activity is found.
 	"""
+
 	for item in pending_notifications:
 		video_id = item["video_id"]
 		video_data = video_metadata_map.get(video_id, {})
@@ -295,13 +303,16 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		main.logger.info(f"Video title: {title}")
 		main.logger.info(f"members only: {members_only}")
 
-		for discord_channel in item["discord_channels"]:
-			await bot.notify_youtube_activity(
-				discord_channel,
-				detected_status,
-				item["channel_name"],
-				item["video_id"],
-				members_only)
+		if not main.startup.silent:
+			for discord_channel in item["discord_channels"]:
+				await bot.notify_youtube_activity(
+					discord_channel,
+					detected_status,
+					item["channel_name"],
+					item["video_id"],
+					members_only)
+		else:
+			main.logger.info(f"Skipping notification for YouTube video {video_id} due to silent start.\n")
 
 #
 #	Youtube Members-Only activity loop
@@ -312,6 +323,8 @@ async def check_for_members_only_youtube_activity() -> None:
 	"""
 	Main YouTube Members-Only activity polling loop.
 	"""
+	first_run_members_only = True
+
 	main.logger.info(f"Starting the Members-Only Youtube activity sharing task...\n")
 
 	# Use the shared main.yt_wait_time and allow dynamic updates via event
@@ -323,6 +336,7 @@ async def check_for_members_only_youtube_activity() -> None:
 
 			pending_notifications = []
 			video_ids_to_check = []
+
 
 			for channel_url in youtube_subscriptions:
 				internal_id = sql.get_id_for_channel_url(channel_url, "YouTube_members")
@@ -350,9 +364,15 @@ async def check_for_members_only_youtube_activity() -> None:
 				except Exception as e:
 					main.logger.error(f"Error checking members-only playlist for {channel_name}: {e}\n")
 
-			video_metadata_map = batch_fetch_activity_metadata(set(video_ids_to_check))
-			
-			await process_youtube_notifications(pending_notifications, video_metadata_map)
+				video_metadata_map = batch_fetch_activity_metadata(set(video_ids_to_check))
+				
+				await process_youtube_notifications(pending_notifications, video_metadata_map)
+				
+				if first_run_members_only:
+					if hasattr(main, "startup") and main.startup.silent:
+						await main.startup.task_finished_first_run()
+					first_run_members_only = False
+					main.logger.info(f"Finished first run of Members-Only Youtube activity sharing task.\n")
 
 		except Exception as e:
 			main.logger.error(f"Error inside members-only Youtube activity loop: {e}\n")

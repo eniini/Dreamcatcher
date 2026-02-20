@@ -248,6 +248,28 @@ async def on_shutdown():
 	await bot.close()
 
 #
+#	Startup task controller
+#
+
+class StartupSilencer:
+	def __init__(self, task_count: int, silent: bool=True):
+		self.remaining_tasks = task_count
+		self._lock = asyncio.Lock()
+		self.silent = silent
+		self._event = asyncio.Event()
+	
+	async def task_finished_first_run(self):
+		async with self._lock:
+			self.remaining_tasks -= 1
+			if self.remaining_tasks <= 0:
+				self.silent = False
+				self._event.set()
+	
+	async def wait_until_ready(self):
+		await self._event.wait()
+
+
+#
 #	Discord bot notification functions
 #
 
@@ -288,7 +310,7 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 	else:
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
-async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str, post_type: str) -> None:
+async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str, post_type: str, author_url: str) -> None:
 	channel = await bot.fetch_channel(int(target_channel))
 	# check if the bot has permission to send messages in the channel
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
@@ -296,7 +318,7 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 		ping_role = ""
 		# only ping role for root posts or replies to third party posts.
 		# self-replies and context posts do not cumulate pings.
-		if notify_role and post_type is "root" or post_type == "reply":
+		if notify_role and (post_type == "root" or post_type == "reply"):
 			ping_role = f"<@&{notify_role}> "
 
 		TITLE_MAP = {
@@ -305,10 +327,19 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 			"reply": "🦋💬 Bluesky Reply",
 			"repost": "🦋🔁 Bluesky Repost",
 			"context": "🦋🧵 Original Post",
-}
+		}
 		try:
 			# Create embed for better formatting
-			post_url = blsky.convert_bluesky_uri_to_url(post_uri)
+			# If this is a video post, use the direct video embed URL
+			is_video_post = False
+			video_url = None
+			if links and any("d.bksye.app" in link for link in links):
+				is_video_post = True
+				video_url = next((link for link in links if "d.bksye.app" in link), blsky.convert_bluesky_uri_to_url(post_uri))
+				post_url = video_url
+			else:
+				post_url = blsky.convert_bluesky_uri_to_url(post_uri)
+
 			embed = discord.Embed(
 				title = TITLE_MAP.get(post_type, "🦋 Bluesky Post"),
 				description=content,
@@ -316,15 +347,14 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 				url=post_url,
 				timestamp = discord.utils.utcnow()
 			)
-			# Add extra context for replied posts by third party
-			if post_type == "context":
-				embed.description = f"*Original post replied to by {channel_name}:*\n\n{content}"
+			# If video, add as embed field
+			if is_video_post and video_url:
+				embed.add_field(name="Video", value=video_url, inline=False)
+
 			embed.set_author(name=f"{channel_name}",
-				icon_url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
-			)
+				icon_url=author_url if author_url else avatar_url) # If repost, original author's avatar.
 			embed.set_thumbnail(
-				url=avatar_url #"https://cdn.bsky.app/img/avatar/plain/did:plc:mqa7bk3vtcfkh4y6xzpxivy6/bafkreicg73sfqnrrasx6xprjxkl2evhz3qmzpchhafesw6mnscxrp45g2q@jpeg"
-			)
+				url=avatar_url) # Thumbnail is always who is subscribed
 			if images:
 				if (len(images) > 1):
 					# multiple embeds hack. https://github.com/Rapptz/discord.py/discussions/9045

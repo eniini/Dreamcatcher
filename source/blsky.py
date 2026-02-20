@@ -1,9 +1,8 @@
 import asyncio
 import re
-from numpy import record
-from requests import post
 import urlextract
 from atproto import Client
+from atproto import models
 
 import main
 import bot
@@ -54,10 +53,28 @@ def convert_bluesky_uri_to_url(at_uri: str):
 		# Check if the URI belongs to a post
 		if collection == "app.bsky.feed.post":
 			return f"https://bsky.app/profile/{did}/post/{rkey}"
-	
-	return None  # Return None if the URI is invalid or not a post
 
-def extract_media(post: any) -> list:
+def convert_bluesky_uri_to_video_url(at_uri: str):
+	"""
+	Converts a Bluesky AT URI to a direct video embed URL for Discord (d.bksye.app).
+	"""
+	match = URI_TO_URL_REGEX.match(at_uri)
+	if match:
+		did = match.group(1)
+		rkey = match.group(3)
+		try:
+			# Attempt to fetch the public handle for the DID
+			profile = client.get_profile(did)
+			handle = getattr(profile, 'handle', None)
+			if handle:
+				return f"https://d.bskye.app/profile/{handle}/post/{rkey}"
+		except Exception:
+			pass
+		# Fallback to DID if handle not found
+		return f"https://d.bskye.app/profile/{did}/post/{rkey}"
+	return None
+
+def extract_media(post: any) -> list | None:
 	"""
 	Extracts image URLs from a Bluesky post, if available.
 	"""
@@ -84,7 +101,49 @@ def extract_media(post: any) -> list:
 							images.append(image_url)
 		except Exception as e:
 			main.logger.info(f"Error extracting media from post: {e}\n")
-	return images if images else []
+		return images if images else None
+
+def contains_video(post: any) -> bool:
+	"""
+	Extracts video URL from a Bluesky post if it contains a video embed.
+	"""
+	record = getattr(post, "record", None)
+	if not record:
+		return False
+	embed = getattr(record, "embed", None)
+	if not embed:
+		return False
+
+	# Case 1: Direct video embed
+	if isinstance(embed, models.AppBskyEmbedVideo.Main):
+		return True
+	# Case 2: RecordWithMedia containing video
+	elif isinstance(embed, models.AppBskyEmbedRecordWithMedia.Main):
+		return True
+	else:
+		return False
+
+def extract_external_embed(post: any) -> dict | None:
+	"""
+	Extracts external embed data (link preview) from a Bluesky post.
+	Returns a dict with uri, title, description, and thumb if available.
+	"""
+	record = getattr(post, "record", None)
+	embed = getattr(record, "embed", None)
+
+	if not embed:
+		return None
+
+	# External link preview
+	if getattr(embed, "$type", None) == "app.bsky.embed.external":
+		ext = embed.external
+		return {
+			"uri": getattr(ext, "uri", None),
+			"title": getattr(ext, "title", None),
+			"description": getattr(ext, "description", None),
+			"thumb": getattr(ext.thumb, "ref", None) if getattr(ext, "thumb", None) else None
+		}
+	return None
 
 def extract_links(post: any) -> list:
 	"""
@@ -115,6 +174,8 @@ def replace_urls(text: str, links: list) -> str:
 	Replaces truncated URLs in text with full URLs.
 	NOTE: Currently used to remove truncated URLs from text, as they are posted separately to enable previews.
 	"""
+	if not text:
+		return ""
 	truncated_links = extractor.find_urls(text)
 	# Replace truncated links with full URLs
 	if truncated_links and links:
@@ -136,9 +197,10 @@ async def fetch_bluesky_profile(channel_id):
 	try:
 		profile = client.get_profile(channel_id)
 		if profile:
-			display_name = profile.display_name
-			avatar_url = profile.avatar
-			return {"display_name": display_name, "avatar_url": avatar_url}
+			display_name = getattr(profile, 'display_name', None)
+			avatar_url = getattr(profile, 'avatar', None)
+			did = getattr(profile, 'did', None)
+			return {"display_name": display_name, "avatar_url": avatar_url, "did": did}
 		else:
 			return None
 
@@ -165,30 +227,41 @@ async def fetch_bluesky_posts(channel_id):
 				reply_parent_uri = item.post.record.reply.parent.uri
 				reply_parent_did = item.post.record.reply.parent.uri.split("/")[2]  # DID from at://
 
-			# check if post is a repost/quote
-			is_repost = False
-			if (
-				hasattr(item, "reason")
-				and item.reason
-				and getattr(item.reason, "$type", None) == "app.bsky.feed.defs#reasonRepost"
-			): is_repost = True
+			# Robust repost detection (per Bluesky spec)
+			is_repost = isinstance(
+				item.reason,
+				models.AppBskyFeedDefs.ReasonRepost
+			)
+			if (is_repost):
+				reposter = item.reason.by.handle
+				original_author = item.post.author.handle
 
+			# Quote post detection
+			is_quote = False
 			record = item.post.record
-			has_text = bool(getattr(record, "text", "").strip())
-			has_embed = hasattr(record, "embed") and record.embed is not None
-			# Discard posts with no content (incomplete or deleted posts etc.)
-			if not (has_text or has_embed or is_repost):
-				continue
-			else:
-				posts.append({
-					"text": item.post.record.text,
-					"uri": item.post.uri,
-					"post_images": extract_media(item.post),
-					"links": extract_links(item.post),
-					"reply_parent_uri": reply_parent_uri,
-					"reply_parent_did": reply_parent_did,
-					"is_repost": is_repost
-				})
+			is_quote = isinstance(
+				record.embed,
+				models.AppBskyEmbedRecord.Main) or isinstance(
+				record.embed,
+				models.AppBskyEmbedRecordWithMedia.Main
+			)
+
+			#has_text = bool(getattr(record, "text", "").strip())
+			#has_embed = hasattr(record, "embed") and record.embed is not None
+
+			posts.append({
+				"text": getattr(item.post.record, "text", ""),
+				"uri": item.post.uri,
+				"post_images": extract_media(item.post),
+				"video": contains_video(item.post),
+				"external": extract_external_embed(item.post),
+				"links": extract_links(item.post),
+				"reply_parent_uri": reply_parent_uri,
+				"reply_parent_did": reply_parent_did,
+				"is_repost": is_repost,
+				"is_quote": is_quote,
+				"repost_author": original_author if is_repost else None
+			})
 		return posts
 	except Exception as e:
 		main.logger.error(f"Error fetching Bluesky posts: {e}\n")
@@ -207,6 +280,8 @@ async def fetch_bluesky_post_by_uri(uri: str):
 			"text": parent.record.text,
 			"uri": parent.uri,
 			"images": extract_media(parent),
+			"video": contains_video(parent),
+			"external": extract_external_embed(parent),
 			"links": extract_links(parent),
 			"author_did": parent.author.did,
 			"author_name": parent.author.display_name,
@@ -218,6 +293,9 @@ async def fetch_bluesky_post_by_uri(uri: str):
 
 async def share_bluesky_posts() -> None:
 	main.logger.info(f"Starting the Bluesky post sharing task...\n")
+
+	first_run = True
+
 	while True:
 		try:
 			# Fetch all YouTube subscriptions from the database
@@ -226,9 +304,8 @@ async def share_bluesky_posts() -> None:
 
 				internal_id = sql.get_id_for_channel_url(channel_id)
 
-				# Keep track of already shared parent URIs (posts) to avoid duplicates.
-				# Avoids spam if subscribed account replies to 3rd party post multiple times.
-				posted_parent_uris = set()
+				# Keep track of already shared post URIs to avoid duplicates for reposts and replies.
+				posted_post_uris = set()
 
 				# Fetch posts from Bluesky
 				posts = await fetch_bluesky_posts(channel_id)
@@ -248,60 +325,123 @@ async def share_bluesky_posts() -> None:
 				main.logger.info(f"Found {len(new_posts)} new posts for Bluesky channel {channel_id}...\n")
 				# get profile information for the channel
 				profile = await fetch_bluesky_profile(channel_id)
+				profile_did = profile.get("did") if profile else None
 
 				# Post new posts to Discord in reverse order (oldest first)
-				for post in reversed(new_posts):
-					post_uri = post['uri']
-					content = replace_urls(post['text'], post['links'])
-					images = post['post_images']
-					links = post['links']
-					post_type = "root"
+				if not main.startup.silent:
+					for post in reversed(new_posts):
+						post_uri = post['uri']
+						contains_video = True if (post.get("video") == True) else False
+						post_type = "root"
+						notify_list = sql.get_discord_channels_for_social_channel(internal_id)
+						profile_display_name = profile.get("display_name") if profile else None
+						profile_avatar_url = profile.get("avatar_url") if profile else None
 
-					if post['is_repost']:
-						post_type = "repost"
+						# Skip if we've already shared this post (repost or reply)
+						if post_uri in posted_post_uris:
+							continue
 
-					notify_list = sql.get_discord_channels_for_social_channel(internal_id)
+						# Determine post type (repost, reply, self_reply, etc.)
+						if post['is_repost']:
+							post_type = "repost"
+						if post["reply_parent_uri"]:
+							post_type = "reply"
+							if profile_did and post["reply_parent_did"] == profile_did:
+								post_type = "self_reply"
+							else:
+								parent_uri = post["reply_parent_uri"]
+								if parent_uri not in posted_post_uris:
+									parent_post = await fetch_bluesky_post_by_uri(parent_uri)
+									if parent_post:
+										posted_post_uris.add(parent_uri)
+										for discord_channel in notify_list:
+											parent_has_video = parent_post.get("video")
+											if parent_has_video:
+												await bot.notify_bluesky_activity(
+													target_channel = discord_channel,
+													post_uri = parent_post["uri"],
+													content = None,
+													images = None,
+													links = [convert_bluesky_uri_to_url(parent_post["uri"])],
+													channel_name = parent_post["author_name"],
+													avatar_url = profile_avatar_url,
+													post_type = "parent_post",
+													author_url = parent_post["author_avatar"]
+												)
+											else:
+												await bot.notify_bluesky_activity(
+													target_channel = discord_channel,
+													post_uri = parent_post["uri"],
+													content = parent_post["text"],
+													images = parent_post["images"],
+													links = parent_post["links"],
+													channel_name = parent_post["author_name"],
+													avatar_url = profile_avatar_url,
+													post_type = "parent_post",
+													author_url = parent_post["author_avatar"]
+												)
 
-					if post["reply_parent_uri"]:
-						# This post is a reply to another post (even if by self)
-						post_type = "reply"
-						if post["reply_parent_did"] == channel_id:
-							post_type = "self_reply"
-						else:
-							# Only if replying to another account (not self-reply), 
-							# fetch and share the root post as well.
-							# NOTE: this is an additional message sent before the reply post.
-							parent_uri = post["reply_parent_uri"]
-							# Check if we have already posted this parent URI
-							if parent_uri not in posted_parent_uris:
-								parent_post = await fetch_bluesky_post_by_uri(parent_uri)
-								if parent_post:
-									# Send parent post to Discord channels before the reply post
-									main.logger.info(f"Sending Bluesky parent post {parent_uri} to Discord channels before reply post {post_uri}...\n")
-									for discord_channel in notify_list:
-										await bot.notify_bluesky_activity(
-											discord_channel,
-											parent_post["uri"],
-											parent_post["text"],
-											parent_post["images"],
-											parent_post["links"],
-											parent_post["author_name"],
-											parent_post["author_avatar"],
-											"context"
-										)
+						posted_post_uris.add(post_uri)
 
-					for discord_channel in notify_list:
-						main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
-						await bot.notify_bluesky_activity(
-							discord_channel,
-							post_uri,
-							content,
-							images,
-							links,
-							profile.get("display_name"),
-							profile.get("avatar_url"),
-							post_type
-						)
+						for discord_channel in notify_list:
+							repost_profile = await fetch_bluesky_profile(post["repost_author"]) if post["repost_author"] else None
+
+							main.logger.info(f"Sending Bluesky post {post_uri} to Discord channel {discord_channel}...\n")
+							if contains_video:
+								video_url = convert_bluesky_uri_to_video_url(post_uri)
+								await bot.notify_bluesky_activity(
+									target_channel = discord_channel,
+									post_uri = post_uri,
+									content = replace_urls(post['text'], post['links']),
+									images = post['post_images'],
+									links = [video_url],
+									channel_name = profile_display_name,
+									avatar_url = profile_avatar_url, # Reposting user's avatar to maintain consistency/context
+									post_type = post_type,
+									author_url = repost_profile.get("avatar_url") if repost_profile else None
+								)
+							elif post_type == "repost":
+								
+								await bot.notify_bluesky_activity(
+									target_channel = discord_channel,
+									post_uri = post_uri,
+									content = replace_urls(post['text'], post['links']),
+									images = post['post_images'],
+									links = post['links'],
+									channel_name = repost_profile.get("display_name"),
+									avatar_url = profile_avatar_url, # Reposting user's avatar to maintain consistency/context
+									post_type = "repost",
+									author_url = repost_profile.get("avatar_url") if repost_profile else None
+								)
+							else:
+								external = post.get("external")
+								links = post['links']
+								if external and external.get("uri"):
+									if links is not None:
+										links = list(links)
+										links.append(external["uri"])
+									else:
+										links = [external["uri"]]
+								await bot.notify_bluesky_activity(
+									target_channel = discord_channel,
+									post_uri = post_uri,
+									content = replace_urls(post['text'], post['links']),
+									images = post['post_images'],
+									links = links,
+									channel_name = profile_display_name,
+									avatar_url = profile_avatar_url,
+									post_type = post_type,
+									author_url = None
+								)
+				else:
+					main.logger.info(f"Skipping notification for Bluesky posts due to silent start.\n")
+				# First run silent start handling: if this is first time the loop is run since startup, actually notifying about posts is skipped
+				# and this asyncio task signals the StartupSilencer that it has finished the silent loop.
+				if first_run:
+					if hasattr(main, "startup") and main.startup.silent:
+						await main.startup.task_finished_first_run()
+					first_run = False
+					main.logger.info(f"Finished first run of Bluesky post sharing task.\n")
 
 				# Update the database with the most recent post ID (first in the new_posts list)
 				if new_posts:
