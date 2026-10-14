@@ -132,7 +132,7 @@ async def check_for_twitch_activities():
 			twitch_auth_token = await initialize_twitch_auth_token()
 
 			for twitch_id in twitch_subscriptions:
-				internal_id = sql.get_id_for_channel_url(twitch_id)
+				internal_id = sql.get_id_for_channel_url(twitch_id, "Twitch")
 				twitch_login_name = sql.get_channel_name(internal_id)
 
 				try:
@@ -148,7 +148,11 @@ async def check_for_twitch_activities():
 							"type": "live",
 							"internal_id": internal_id,
 							"channel_name": twitch_login_name,
-							"title": live_info["title"]
+							"display_name": live_info.get("user_name"),
+							"title": live_info["title"],
+							"stream_id": live_info["id"],  # unique per broadcast, used for dedup
+							"start_time": live_info.get("started_at"),
+							"game_name": live_info.get("game_name")
 						})
 				except Exception as e:
 					main.logger.error(f"Error processing Twitch user {twitch_login_name}: {e}\n")
@@ -173,7 +177,9 @@ async def process_twitch_notifications(pending_notifications: list[dict]) -> Non
 	global first_run
 
 	for item in pending_notifications:
-		virtual_id = str(item["internal_id"]) + item["title"] + item["type"]
+		# Key on the unique stream ID, not the title: identical titles across streams must still notify,
+		# and mid-stream title edits must not re-notify.
+		virtual_id = f"{item['stream_id']}{item['type']}"
 
 		if sql.check_post_match(item["internal_id"], virtual_id):
 			continue
@@ -189,7 +195,9 @@ async def process_twitch_notifications(pending_notifications: list[dict]) -> Non
 					item["type"],
 					item["channel_name"],
 					item.get("title"),
-					item.get("start_time")
+					item.get("start_time"),
+					game_name=item.get("game_name"),
+					display_name=item.get("display_name")
 				)
 		else:
 			main.logger.info(f"Skipping notification for Twitch channel {item['channel_name']} due to silent start.\n")

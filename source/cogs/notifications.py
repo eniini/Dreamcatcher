@@ -68,7 +68,7 @@ class Notifications(commands.Cog):
 					sql.add_discord_channel(targetChannel.id, targetChannel.name)
 
 					# Check if the given Bluesky channel already has stored ID in database and if its already linked.
-					internal_social_media_channel = sql.get_id_for_channel_url(bluesky_channel_id)
+					internal_social_media_channel = sql.get_id_for_channel_url(bluesky_channel_id, "Bluesky")
 					if internal_social_media_channel is not None:
 						# Bluesky channel is already in database, and is already linked to this Discord channel.
 						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
@@ -143,7 +143,7 @@ class Notifications(commands.Cog):
 					sql.add_discord_channel(targetChannel.id, targetChannel.name)
 
 					# Check if the given Twitch channel already has stored ID in database and if its already linked.
-					internal_social_media_channel = sql.get_id_for_channel_url(twitch_channel_id)
+					internal_social_media_channel = sql.get_id_for_channel_url(twitch_channel_id, "Twitch")
 					if internal_social_media_channel is not None:
 						# Twitch channel is already in database, and is already linked to this Discord channel.
 						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
@@ -217,7 +217,7 @@ class Notifications(commands.Cog):
 					sql.add_discord_channel(targetChannel.id, targetChannel.name)
 
 					# Check if the given YT channel already has stored ID in database and if its already linked.
-					internal_social_media_channel = sql.get_id_for_channel_url(youtube_channel_id)
+					internal_social_media_channel = sql.get_id_for_channel_url(youtube_channel_id, "YouTube")
 					if internal_social_media_channel is not None:
 						# YT channel is already in database, and is already linked to this Discord channel.
 						if sql.is_discord_channel_subscribed(targetChannel.id, internal_social_media_channel) is True:
@@ -350,9 +350,13 @@ class Notifications(commands.Cog):
 
 			# If social_media_channel is provided, validate it
 			if social_media_channel:
-				internal_social_media_channel = sql.get_id_for_channel_url(social_media_channel)
+				# The autocomplete supplies the internal subscription ID. Unlike the URL, it is unique per platform
+				# (a YouTube channel and its members-only feed share the same URL).
+				internal_social_media_channel = int(social_media_channel) if social_media_channel.isdigit() else None
+				if internal_social_media_channel is not None and sql.get_channel_name(internal_social_media_channel) is None:
+					internal_social_media_channel = None  # no such subscription
 				if internal_social_media_channel is None:
-					await interaction.response.send_message(f"Invalid social media channel URL. Please try again.",
+					await interaction.response.send_message(f"Invalid subscription. Please pick one from the suggestion list.",
 						ephemeral=True)
 					return
 
@@ -403,7 +407,8 @@ class Notifications(commands.Cog):
 				continue
 			# convert to lowercase, compare against channel name
 			if current.lower() in name.lower():
-				choices.append(discord.app_commands.Choice(name=f"{name}", value=url))
+				platform = sql.get_channel_platform(internal_id) or "?"
+				choices.append(discord.app_commands.Choice(name=f"{name} ({platform})"[:100], value=str(internal_id)))
 		return choices[:25] # Limit to 25 choices (Discord's limit)
 
 

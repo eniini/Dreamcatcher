@@ -273,8 +273,23 @@ class StartupSilencer:
 #	Discord bot notification functions
 #
 
+async def fetch_target_channel(target_channel: str):
+	"""
+	Fetches the Discord channel to notify. Returns None (and logs) if the channel was deleted or the bot lost access,
+	so a single dead destination can't abort notifications for the other subscribers.
+	"""
+	try:
+		return await bot.fetch_channel(int(target_channel))
+	except (discord.NotFound, discord.Forbidden) as e:
+		main.logger.warning(f"Discord channel {target_channel} is deleted or inaccessible ({type(e).__name__}), skipping notification.\n")
+	except Exception as e:
+		main.logger.error(f"Failed to fetch Discord channel {target_channel}: {e}\n")
+	return None
+
 async def notify_youtube_activity(target_channel: str, activity_type: str, channel_name: str, video_id: str, members_only: bool=False) -> None:
-	channel = await bot.fetch_channel(int(target_channel))
+	channel = await fetch_target_channel(target_channel)
+	if channel is None:
+		return
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		# Use channel.id instead of channel.guild.id
 		notify_role = sql.get_notification_role(channel.id)
@@ -311,7 +326,9 @@ async def notify_youtube_activity(target_channel: str, activity_type: str, chann
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
 async def notify_bluesky_activity(target_channel: str, post_uri: str, content: str, images: list, links: list, channel_name: str, avatar_url: str, post_type: str, author_url: str) -> None:
-	channel = await bot.fetch_channel(int(target_channel))
+	channel = await fetch_target_channel(target_channel)
+	if channel is None:
+		return
 	# check if the bot has permission to send messages in the channel
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		notify_role = sql.get_notification_role(channel.id)
@@ -399,8 +416,11 @@ async def notify_bluesky_activity(target_channel: str, post_uri: str, content: s
 	else:
 		main.logger.info(f"Bot does not have permission to send messages in channel: {channel.name}\n")
 
-async def notify_twitch_activity(target_channel: str, activity_type: str, channel_name: str, title: str, start_time: str) -> None:
-	channel = await bot.fetch_channel(int(target_channel))
+async def notify_twitch_activity(target_channel: str, activity_type: str, channel_name: str, title: str, start_time: str,
+								 game_name: str=None, display_name: str=None) -> None:
+	channel = await fetch_target_channel(target_channel)
+	if channel is None:
+		return
 	if channel and channel.permissions_for(channel.guild.me).send_messages:
 		notify_role = sql.get_notification_role(channel.id)
 		ping_role = ""
@@ -408,8 +428,11 @@ async def notify_twitch_activity(target_channel: str, activity_type: str, channe
 			ping_role = f"<@&{notify_role}> "
 		try:
 			if activity_type == "live":
+				name = display_name or channel_name
+				category = f" streaming {game_name}" if game_name else ""
+				# URL stays in the message so Discord unfurls the channel (incl. streamer avatar) itself
 				await channel.send(
-					f"{ping_role}**{channel_name} is now live!** 🔴\n"
+					f"{ping_role}**{name} is now live{category}!** 🔴\n"
 					f"https://www.twitch.tv/{channel_name}"
 				)
 		except Exception as e:

@@ -1,6 +1,8 @@
 import asyncio
+from zoneinfo import ZoneInfo
 from googleapiclient.discovery import build
-from datetime import datetime, timezone
+from googleapiclient.errors import HttpError
+from datetime import datetime, timezone, timedelta
 
 import main
 import bot
@@ -11,9 +13,8 @@ from reconnect_decorator import reconnect_api_with_backoff
 # Activities.list() and PlaylistItems.list() both cost 1 unit per request.
 # So for every successful new post check, 2 units are used. (1 for activities, 1 for playlistItems query for the actual video/livestream url)
 # edit: the video/livestream details are fetched in a batch request, so the cost is 1 unit for 50 video IDs.
-# this means that the soft cap for YT channels to monitor is roughly 300 channels.
 
-def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.01) -> int:
+def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: float = 0.1) -> int:
 	"""
 	Calculates the optimal polling interval (in seconds) to stay under the YouTube API daily quota.
 	"""
@@ -31,6 +32,18 @@ def calculate_optimal_polling_interval(quota_limit: int = 10000, quota_buffer: f
 	optimal_interval = int(seconds_per_day // max_cycles_per_day)
 
 	return max(optimal_interval, 60)  # Minimum 60 seconds to avoid unecessary aggressive polling
+
+#
+#	Handle Quota limit
+#
+
+def is_quota_exceeded_error(e: Exception) -> bool:
+	return isinstance(e, HttpError) and e.resp.status == 403 and "quotaExceeded" in str(e)
+
+def seconds_until_quota_reset() -> float:
+	now = datetime.now(ZoneInfo("America/Los_Angeles"))
+	reset = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+	return (reset.astimezone(timezone.utc) - now.astimezone(timezone.utc)).total_seconds() + 30 # buffer
 
 #
 #	API initialization
@@ -158,6 +171,7 @@ async def check_for_youtube_activities() -> None:
 						if activity_info["video_id"]:
 							video_ids_to_check.append(activity_info["video_id"])
 				except Exception as e:
+					if is_quota_exceeded_error(e): raise e  # Raise error for outer loop
 					main.logger.error(f"Error processing activities for channel {channel_id}: {e}\n")
 			
 			video_metadata_map = batch_fetch_activity_metadata(video_ids_to_check)
@@ -170,6 +184,11 @@ async def check_for_youtube_activities() -> None:
 				main.logger.info(f"Finished first run of Youtube activity sharing task.\n")
 		
 		except Exception as e:
+			if is_quota_exceeded_error(e):
+				seconds_to_wait = seconds_until_quota_reset()
+				main.logger.warning(f"YouTube API quota exceeded. Waiting for {seconds_to_wait:.0f} seconds until reset.\n")
+				await asyncio.sleep(seconds_to_wait)
+				continue  # Restart the loop after waiting
 			main.logger.error(f"Error inside Youtube activity loop: {e}\n")
 
 		# simple sleep; loop will pick up any main.yt_wait_time changes next iteration
@@ -180,7 +199,7 @@ def fetch_latest_youtube_activity(channel_id: str) -> dict | None:
 	Fetches all the necessary information about the latest activity of a given channel,
 	bundled together with the channel name and internal ID.
 	"""
-	internal_id = sql.get_id_for_channel_url(channel_id)
+	internal_id = sql.get_id_for_channel_url(channel_id, "YouTube")
 	channel_name = sql.get_channel_name(internal_id)
 
 	response = youtubeClient.activities().list(
@@ -276,6 +295,12 @@ async def process_youtube_notifications(pending_notifications: list[dict], video
 		# get final status classification
 		detected_status = video_data.get("status")
 
+		# Video missing from the videos.list response (still processing, private, deleted, or not visible to the API key).
+		# Don't record it: saving it as an "upload" would suppress the real notification once the video becomes available.
+		if detected_status not in ("upload", "live", "upcoming_livestream", "upcoming_premiere"):
+			main.logger.info(f"No metadata available yet for video {video_id} ({item['channel_name']}), retrying next cycle.\n")
+			continue
+
 		# determine notification type based on live status
 		if detected_status in ("upcoming_livestream", "upcoming_premiere"):
 			phase_suffix = detected_status
@@ -346,10 +371,8 @@ async def check_for_members_only_youtube_activity() -> None:
 					members_only_videos = fetch_latest_members_only_content(channel_url, 1)
 
 					for video_id in members_only_videos:
-
 						if sql.check_post_match(internal_id, video_id):
 							continue  # already processed
-
 						pending_notifications.append({
 							"internal_channel_id": internal_id,
 							"channel_name": channel_name,
@@ -360,21 +383,26 @@ async def check_for_members_only_youtube_activity() -> None:
 							"discord_channels": sql.get_discord_channels_for_social_channel(internal_id)
 						})
 						video_ids_to_check.append(video_id)
-
 				except Exception as e:
+					if is_quota_exceeded_error(e): raise e  # Raise error for outer loop
 					main.logger.error(f"Error checking members-only playlist for {channel_name}: {e}\n")
 
-				video_metadata_map = batch_fetch_activity_metadata(set(video_ids_to_check))
-				
-				await process_youtube_notifications(pending_notifications, video_metadata_map)
-				
-				if first_run_members_only:
-					if hasattr(main, "startup") and main.startup.silent:
-						await main.startup.task_finished_first_run()
-					first_run_members_only = False
-					main.logger.info(f"Finished first run of Members-Only Youtube activity sharing task.\n")
+			# Process the pending notifications and fetch metadata for the video IDs
+			video_metadata_map = batch_fetch_activity_metadata(set(video_ids_to_check))
+			await process_youtube_notifications(pending_notifications, video_metadata_map)
+
+			if first_run_members_only:
+				if hasattr(main, "startup") and main.startup.silent:
+					await main.startup.task_finished_first_run()
+				first_run_members_only = False
+				main.logger.info(f"Finished first run of Members-Only Youtube activity sharing task.\n")
 
 		except Exception as e:
+			if is_quota_exceeded_error(e):
+				seconds_to_wait = seconds_until_quota_reset()
+				main.logger.warning(f"YouTube API quota exceeded. Waiting {seconds_to_wait:.0f}s until reset.\n")
+				await asyncio.sleep(seconds_to_wait)
+				continue # Restart the loop after waiting
 			main.logger.error(f"Error inside members-only Youtube activity loop: {e}\n")
 
 		# simple sleep; loop will pick up any main.yt_wait_time changes next iteration
